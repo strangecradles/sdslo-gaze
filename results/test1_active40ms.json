@@ -1,0 +1,63 @@
+{
+  "which": "test1",
+  "package": "sdslo-gaze",
+  "timing": {
+    "label": "active40ms",
+    "fps": 14.633001422475107,
+    "sweeps_per_frame": 808,
+    "frame_period_ms": 68.33867988723631,
+    "active_ms": 40.0,
+    "flyback_ms": 28.33867988723631,
+    "active_line_hz": 20200.0,
+    "duty_cycle": 0.5853200568990043,
+    "reacq_cols": 25,
+    "note": "active/flyback split is a hardware assumption, not measured from data"
+  },
+  "target_hz": 960.0,
+  "strip_width": 8,
+  "strip_hz": 1477.9331436699858,
+  "n_observed": 67712,
+  "role_counts": {
+    "observed_active": 65567,
+    "observed_reacq": 2145,
+    "predicted_flyback": 73656,
+    "missing_flyback": 0,
+    "rejected_mislock": 7409,
+    "unlocked": 28303
+  },
+  "duty_cycle_report": {
+    "observed_fraction": 0.3823808448159024,
+    "predicted_fraction": 0.41594759430765754,
+    "missing_fraction": 0.0,
+    "n_events": 262,
+    "rate_hz": 5.718609458316639,
+    "fully_observed_events": 262,
+    "gap_straddling_events": 0
+  },
+  "precision_arcmin": {
+    "rms_x": 3.837200790207419,
+    "rms_y": 1.4383117597368633
+  },
+  "speed_arcmin_s": {
+    "p50": 758.3107559175088,
+    "p99": 17525.267755005458,
+    "p99.9": 20030.596265491185
+  },
+  "microsaccades": {
+    "n_events": 262,
+    "main_sequence": {
+      "slope": 0.5197367597660565,
+      "intercept": 2.253758874621575,
+      "r": 0.8069386119153457,
+      "n": 262
+    }
+  },
+  "dot_correlation": {
+    "r_x": 0.8438387342507877,
+    "r_y": 0.7626588054097844,
+    "rms_x_arcmin": 21.859483971655813,
+    "rms_y_arcmin": 26.493841761845577,
+    "n": 13543
+  },
+  "blind_gap_waveform_claim_supported": false
+}

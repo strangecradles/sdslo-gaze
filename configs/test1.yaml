@@ -1,0 +1,36 @@
+# Canonical SD-SLO capture: test1 (pursuit raster).
+# The active/flyback split is a HARDWARE assumption, not measured from data (see docs/flyback.md).
+# Swap `timing_model` to bracket sensitivity, or set explicit hardware ms under `timing_hardware`.
+
+capture:
+  which: test1
+  kind: raster
+  fps: 14.633001422475107
+  sweeps_per_frame: 808   # slow-axis steps per frame (== columns)
+  rows_per_frame: 1000    # fast-axis samples per sweep
+
+tracking:
+  target_hz: 960.0        # Sheehy 2012 operating point; S chosen so (808//S)*fps >= this
+  strip_pad_px: 64
+  ref_mode: incremental
+
+timing:
+  timing_model: flyback10ms   # one of: active40ms | flyback10ms | uniform
+  reacq_cols: 25
+  # timing_hardware:          # if set, overrides timing_model with measured telemetry
+  #   active_ms: 45.0
+  max_bridge_ms: 35.0         # flyback gaps longer than this are left MISSING, not predicted
+
+gating:
+  ncc_floor: 0.35
+  max_speed_arcmin_s: 60000.0
+  max_micro_step_arcmin: 8.0
+
+microsaccade:
+  vfac: 6.0                   # Engbert-Kliegl velocity threshold factor
+  min_dur_s: 0.006
+  smooth_ms: 3.0
+
+calibration:                  # measured; see src/sdslo_gaze/units.py
+  col_px_per_deg: 136.12526933374963   # horizontal / slow axis
+  row_px_per_deg: 124.64070866730775   # vertical / fast axis

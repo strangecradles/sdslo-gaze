@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sdslo-gaze"
+version = "0.1.0"
+description = "SOTA high-rate (600-960+ Hz) 2-D gaze tracking and microsaccade-waveform recovery from SD-SLO retinal imaging, with first-class scanner-flyback handling."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Kodiak" }]
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "opencv-python>=4.7",
+]
+
+[project.optional-dependencies]
+viz = ["matplotlib>=3.7"]
+config = ["pyyaml>=6.0"]
+dev = ["pytest>=7.0", "matplotlib>=3.7", "pyyaml>=6.0"]
+
+[project.scripts]
+sdslo-gaze = "sdslo_gaze.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
