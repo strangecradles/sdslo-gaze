@@ -13,8 +13,8 @@ from pathlib import Path
 
 import numpy as np
 
-from . import data_io, gap_model, metrics, microsaccade, units
-from .scan_timing import ScanTiming
+from . import data_io, desinusoid, gap_model, metrics, microsaccade, units
+from .scan_timing import ScanTiming, SinusoidTiming
 from .strip_tracker import StripTrack, track
 
 
@@ -98,9 +98,48 @@ def run(
         st.t, st.x_arcmin, st.y_arcmin, st.q, st.frame, st.strip, st.S, timing,
         infov=st.infov,
     )
+    # 4. microsaccades + metrics + manifest (shared with the sinusoidal path)
+    dot_corr = None
+    if with_dot:
+        obs = gap.observed()
+        try:
+            champ = data_io.load_champion_csv(data_root=data_root)
+            dt = np.asarray(champ["t_s"], dtype=np.float64)
+            dx = np.asarray(champ["dot_x_arcmin"], dtype=np.float64)
+            dy = np.asarray(champ["dot_y_arcmin"], dtype=np.float64)
+            dfin = np.isfinite(dt) & np.isfinite(dx) & np.isfinite(dy)
+            dot_corr = metrics.correlate_dot(
+                gap.t[obs], gap.x_arcmin[obs], gap.y_arcmin[obs],
+                dt[dfin], dx[dfin], dy[dfin],
+            )
+        except (FileNotFoundError, KeyError, ValueError):
+            dot_corr = None
+
+    return _postprocess(
+        which, timing, target_hz, st, gap,
+        out_dir=out_dir, manifest_stem=f"{which}_{timing_model}", dot_corr=dot_corr,
+    )
+
+
+def _postprocess(
+    which: str,
+    timing,
+    target_hz: float,
+    st: StripTrack,
+    gap,
+    *,
+    out_dir: str | None,
+    manifest_stem: str,
+    dot_corr: dict | None = None,
+) -> RunResult:
+    """Shared tail: detect microsaccades, run the surrogate null, score metrics, write manifest.
+
+    Used by both the sawtooth :func:`run` and the sinusoidal :func:`run_sinusoid` so the
+    honesty-critical accounting (observed-only metrics, surrogate-null control) is identical
+    regardless of scan mode.
+    """
     obs = gap.observed()
 
-    # 4. microsaccades on observed samples only
     events = microsaccade.detect(gap.t, gap.x_arcmin, gap.y_arcmin, observed=obs)
     ms_main = microsaccade.main_sequence(events)
     # State array is at the strip cadence, not the encoded line rate -> pass the true rate so
@@ -127,24 +166,8 @@ def run(
         "null_fraction_of_real": (null_per_shuffle / len(events)) if events else float("nan"),
     }
 
-    # 5. metrics (observed-only)
     prec = metrics.precision_floor(gap.t[obs], gap.x_arcmin[obs], gap.y_arcmin[obs])
     speed = metrics.speed_percentiles(gap.t[obs], gap.x_arcmin[obs], gap.y_arcmin[obs])
-
-    dot_corr = None
-    if with_dot:
-        try:
-            champ = data_io.load_champion_csv(data_root=data_root)
-            dt = np.asarray(champ["t_s"], dtype=np.float64)
-            dx = np.asarray(champ["dot_x_arcmin"], dtype=np.float64)
-            dy = np.asarray(champ["dot_y_arcmin"], dtype=np.float64)
-            dfin = np.isfinite(dt) & np.isfinite(dx) & np.isfinite(dy)
-            dot_corr = metrics.correlate_dot(
-                gap.t[obs], gap.x_arcmin[obs], gap.y_arcmin[obs],
-                dt[dfin], dx[dfin], dy[dfin],
-            )
-        except (FileNotFoundError, KeyError, ValueError):
-            dot_corr = None
 
     result = RunResult(
         which=which,
@@ -168,8 +191,73 @@ def run(
     )
 
     if out_dir is not None:
-        result.manifest_path = _write_manifest(result, out_dir, timing_model)
+        result.manifest_path = _write_manifest(result, out_dir, manifest_stem)
     return result
+
+
+def run_sinusoid(
+    sweeps: np.ndarray,
+    f_scan_hz: float,
+    *,
+    which: str = "sinusoid",
+    cols_per_sweep: int | None = None,
+    trim_frac: float = 0.0,
+    directions=None,
+    antialias: bool = True,
+    S: int | None = None,
+    target_hz: float = 960.0,
+    max_speed_arcmin_s: float = 60000.0,
+    max_step_speed_arcmin_s: float = 12000.0,
+    max_micro_step_arcmin: float = 8.0,
+    ncc_floor: float = 0.35,
+    out_dir: str | None = "results",
+) -> RunResult:
+    """End-to-end gaze tracking for a **sinusoidal, no-flyback** capture.
+
+    This is the entry point for a resonant/sinusoidal slow-axis MEMS mirror. It desinusoids each
+    raw sweep onto a uniform spatial grid (:mod:`sdslo_gaze.desinusoid`), strip-tracks the
+    rectified stream, and re-times it under a gap-free :class:`~sdslo_gaze.scan_timing.SinusoidTiming`
+    -- so there is no ``predicted_flyback`` / ``missing_flyback`` and the duty cycle is ~100%.
+
+    Parameters
+    ----------
+    sweeps : ``(n_sweeps, H, M)`` raw, time-uniform half-period sweeps (one sweep per array row).
+    f_scan_hz : mirror drive frequency (one sweep = half a period; sweep rate = ``2 * f_scan_hz``).
+    cols_per_sweep : desinusoided output columns per sweep (default: input column count ``M``).
+    trim_frac : fraction of the field dropped at each turnaround edge (oversampled/distorted).
+    directions : per-sweep ``"forward"``/``"backward"`` (or 0/1); default alternates (bidirectional).
+    """
+    sweeps = np.asarray(sweeps, dtype=np.float64)
+    if sweeps.ndim != 3:
+        raise ValueError(f"sweeps must be (n_sweeps, H, M); got shape {sweeps.shape}")
+    if sweeps.shape[0] < 2:
+        raise ValueError("run_sinusoid requires at least 2 sweeps")
+    N = cols_per_sweep or sweeps.shape[2]
+
+    # 1. desinusoid every sweep onto the common uniform spatial grid (co-registers fwd/bwd).
+    frames = desinusoid.desinusoid_stack(
+        sweeps, N, directions, trim_frac=trim_frac, antialias=antialias
+    )
+
+    # 2. strip-track the rectified stream (each desinusoided sweep is one "frame").
+    sweep_rate_hz = 2.0 * f_scan_hz
+    st = track(frames, fps=sweep_rate_hz, S=S, target_hz=target_hz)
+
+    # 3. gap-free re-timing + labelling + mislock gating under the sinusoidal timing contract.
+    timing = SinusoidTiming(f_scan_hz=f_scan_hz, cols_per_sweep=N, trim_frac=trim_frac)
+    gap = gap_model.apply_scan_timing(
+        st.t, st.x_arcmin, st.y_arcmin, st.q, st.frame, st.strip, st.S, timing,
+        max_speed_arcmin_s=max_speed_arcmin_s,
+        max_step_speed_arcmin_s=max_step_speed_arcmin_s,
+        max_micro_step_arcmin=max_micro_step_arcmin,
+        ncc_floor=ncc_floor,
+        infov=st.infov,
+    )
+
+    return _postprocess(
+        which, timing, target_hz, st, gap,
+        out_dir=out_dir, manifest_stem=f"{which}_sinusoid", dot_corr=None,
+    )
 
 
 def _to_jsonable(obj):
@@ -184,10 +272,9 @@ def _to_jsonable(obj):
     return obj
 
 
-def _write_manifest(result: RunResult, out_dir: str, timing_model: str) -> str:
+def _write_manifest(result: RunResult, out_dir: str, stem: str) -> str:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    stem = f"{result.which}_{timing_model}"
     payload = {
         "which": result.which,
         "package": "sdslo-gaze",
@@ -216,8 +303,18 @@ def _render_md(p: dict) -> str:
         f"# sdslo-gaze run — {p['which']} ({t['label']} timing)",
         "",
         f"- Strip rate: **{p['strip_hz']:.1f} Hz** (S={p['strip_width']}, target {p['target_hz']:.0f} Hz)",
-        f"- Active line rate: {t['active_line_hz']:.1f} Hz; duty cycle {t['duty_cycle']:.3f} "
-        f"(active {t['active_ms']:.2f} ms + flyback {t['flyback_ms']:.2f} ms)",
+    ]
+    if t.get("scan_mode") == "sinusoid":
+        lines.append(
+            f"- Sinusoidal slow axis: no flyback; sweep rate {t['sweep_rate_hz']:.1f} Hz, "
+            f"duty cycle {t['duty_cycle']:.3f} (trim {t['trim_frac']:.2f}/edge)"
+        )
+    else:
+        lines.append(
+            f"- Active line rate: {t['active_line_hz']:.1f} Hz; duty cycle {t['duty_cycle']:.3f} "
+            f"(active {t['active_ms']:.2f} ms + flyback {t['flyback_ms']:.2f} ms)"
+        )
+    lines += [
         f"- Observed samples: {p['n_observed']:,}",
         "",
         "## Measurement-state composition",

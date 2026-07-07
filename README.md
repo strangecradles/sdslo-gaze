@@ -71,8 +71,25 @@ See `docs/DESIGN.md`. Modules: `units`, `scan_timing` (the flyback contract), `d
 ## The flyback problem
 
 See `docs/flyback.md` for the physics, the empirical evidence that the active/flyback split is
-unmeasurable from the data, the SOTA literature review, and the handling strategy (including the
-hardware roadmap: bidirectional slow-axis or Lissajous scanning to eliminate the gap entirely).
+unmeasurable from the data, the SOTA literature review, and the handling strategy.
+
+### No-flyback sinusoidal mode (the hardware target)
+
+A resonant/sinusoidal slow-axis MEMS mirror eliminates the flyback: both half-periods image the
+field, duty cycle → ~100%, and **no sample is ever predicted or missing**. The software for this
+is built and tested (`desinusoid.py`, `scan_timing.SinusoidTiming`, `pipeline.run_sinusoid`):
+each time-uniform sweep is resampled onto a uniform spatial grid (forward/backward
+co-registered), then the *unchanged* strip tracker runs under a gap-free timing contract.
+
+```python
+from sdslo_gaze import pipeline
+# sweeps: (n_sweeps, H, M) time-uniform half-period sweeps from the MEMS capture
+res = pipeline.run_sinusoid(sweeps, f_scan_hz=400.0, trim_frac=0.08)
+print(res.timing["duty_cycle"], res.role_counts)   # ~1.0, zero predicted/missing flyback
+```
+
+The only remaining hookup is a loader for the real MEMS capture format → the `(n_sweeps, H, M)`
+sweep stack. Tracker and metrics need no change (see `docs/flyback.md` §5.1).
 
 ## Data
 

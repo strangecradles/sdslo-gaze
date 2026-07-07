@@ -115,6 +115,30 @@ provided data is to be **honest and maximally informative** about the gap:
 - Bidirectional slow-axis scanning to reclaim the flyback for acquisition (~+20–40% duty).
 - Or Lissajous acquisition to eliminate the raster retrace entirely.
 
+### 5.1 Sinusoidal, no-flyback slow axis — **implemented (software), pending data**
+A resonant/sinusoidal slow-axis MEMS mirror removes the flyback outright: both half-periods of
+`theta(t) = A·sin(2πf t)` image the field, so the acquisition duty cycle is ~100% and **there is
+no no-acquisition gap** — the entire predict-only/missing-data apparatus above collapses to
+all-observed. The software to consume such a capture is built and tested:
+
+- `desinusoid.py` resamples each time-uniform sweep onto a uniform **spatial** grid (the samples
+  are uniform in time but non-uniform in space — dense at the slow turnarounds, sparse at
+  centre). Forward and backward sweeps are placed on the same grid, which co-registers the two
+  scan directions for free. Anti-aliased area resampling (default) or cubic interpolation; the
+  oversampled turnaround edges can be trimmed (`trim_frac`). Refs: Yang et al. 2015; Giacomelli
+  2023.
+- `scan_timing.SinusoidTiming` is the gap-free timing contract (zero flyback, ~100% duty) with
+  the correct arccos within-sweep time map, so velocity and microsaccade timing stay honest even
+  though desinusoided columns are uniform in space, not time.
+- `pipeline.run_sinusoid` runs the whole chain (desinusoid → *unchanged* strip tracker → gap-free
+  re-timing → microsaccades/metrics). On synthetic bidirectional captures it recovers injected
+  motion with no predicted/missing rows (see `tests/test_sinusoid.py`).
+
+The one remaining step is a loader that adapts the real MEMS capture format into the
+`(n_sweeps, H, M)` sweep stack `run_sinusoid` expects (plus per-sweep direction and the mirror
+frequency / phase). No change to the tracker or the metrics is needed — the trajectory this
+package produces is instantly available for eye tracking on that data.
+
 ## References
 Sheehy 2012 (PMC3469984); Sheehy 2015 (PMC4505698); Stevenson 2016 (PMC4530105);
 Ferguson 2010 (PMC3071649); Bartuzel 2020 (PMC7316009); Bedggood & Metha 2017

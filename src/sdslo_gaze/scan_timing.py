@@ -200,3 +200,106 @@ TIMING_MODELS: dict[str, dict] = {
     "flyback10ms": {"flyback_ms": 10.0}, # 58.3 active + 10 flyback -> active line rate 13850 Hz
     "uniform": {"flyback_ms": 0.0},      # no flyback: encoded uniform clock (baseline, wrong)
 }
+
+
+@dataclass(frozen=True)
+class SinusoidTiming:
+    """Timing contract for a **sinusoidal, no-flyback** slow axis (resonant MEMS mirror).
+
+    Where :class:`ScanTiming` models a sawtooth galvo (active ramp + blind flyback), this models
+    a slow axis driven as ``theta(t) = A*sin(2*pi*f*t)``. Each usable half-period is a monotonic
+    edge-to-edge *sweep*; both half-periods image the field, so there is **no flyback gap** --
+    duty cycle is ~100% (minus any trimmed turnarounds) and no sample is ever ``predicted`` or
+    ``missing``. After desinusoiding (see :mod:`sdslo_gaze.desinusoid`) a sweep's columns are
+    uniform in *space*; their acquisition *time* follows the arccos map, which
+    :meth:`strip_time_s` applies so velocities/microsaccade timing stay honest.
+
+    This class is duck-compatible with the subset of the :class:`ScanTiming` surface that
+    :func:`sdslo_gaze.gap_model.apply_scan_timing` uses (``strip_time_s``, ``reacq_cols``,
+    ``flyback_interval_s`` -> zero-length, ``active_dt_s``, ``is_reacq_col``, ``summary``), so the
+    same re-timing / labelling / mislock-gating pipeline runs on a sinusoidal capture with the
+    flyback-bridging step reducing to a no-op.
+
+    Each desinusoided sweep is one "frame" (index ``0, 1, 2, ...``); by default even frames are
+    forward sweeps and odd frames backward (bidirectional acquisition).
+    """
+
+    f_scan_hz: float                    #: mirror drive frequency; one sweep = half a period
+    cols_per_sweep: int = SWEEPS_PER_FRAME  #: desinusoided spatial columns kept per sweep (N)
+    trim_frac: float = 0.0              #: fraction of the field trimmed at each turnaround edge
+    reacq_cols: int = 0                 #: no reacquisition transient without a flyback
+    label: str = "sinusoid"
+
+    def __post_init__(self) -> None:
+        if self.f_scan_hz <= 0:
+            raise ValueError("f_scan_hz must be > 0")
+        if self.cols_per_sweep < 1:
+            raise ValueError("cols_per_sweep must be >= 1")
+        if not (0.0 <= self.trim_frac < 0.5):
+            raise ValueError("trim_frac must be in [0, 0.5)")
+
+    # --- derived timing ---
+    @property
+    def sweep_period_s(self) -> float:
+        """Duration of one sweep (half the mirror period)."""
+        return 1.0 / (2.0 * self.f_scan_hz)
+
+    @property
+    def sweep_rate_hz(self) -> float:
+        """Sweeps acquired per second (both half-periods used)."""
+        return 2.0 * self.f_scan_hz
+
+    @property
+    def frame_period_s(self) -> float:
+        return self.sweep_period_s
+
+    @property
+    def duty_cycle(self) -> float:
+        """Fraction of wall-clock time spent acquiring (~1.0 minus trimmed turnarounds)."""
+        return 1.0 - 2.0 * self.trim_frac
+
+    @property
+    def active_dt_s(self) -> float:
+        """Nominal mean time between spatial columns (sweep duration / columns)."""
+        return self.sweep_period_s / self.cols_per_sweep
+
+    def _time_frac(self, frame: np.ndarray, center_col: np.ndarray) -> np.ndarray:
+        """Fractional time within a sweep of a strip centred at ``center_col`` (spatial column)."""
+        span = 1.0 - 2.0 * self.trim_frac
+        u = self.trim_frac + center_col / self.cols_per_sweep * span
+        tf = np.arccos(np.clip(1.0 - 2.0 * u, -1.0, 1.0)) / np.pi   # forward
+        backward = (frame.astype(np.int64) % 2) == 1
+        return np.where(backward, 1.0 - tf, tf)
+
+    def strip_time_s(
+        self, frame: np.ndarray | int, strip: np.ndarray | int, strip_width: int
+    ) -> np.ndarray | float:
+        """Acquisition time of a strip, honouring the sinusoidal within-sweep time map."""
+        frame = np.asarray(frame, dtype=np.float64)
+        strip = np.asarray(strip, dtype=np.float64)
+        center_col = strip * strip_width + strip_width / 2.0
+        tf = self._time_frac(frame, center_col)
+        return frame * self.sweep_period_s + tf * self.sweep_period_s
+
+    def flyback_interval_s(self, frame: int) -> tuple[float, float]:
+        """No flyback: a zero-length gap (so gap bridging is a no-op)."""
+        start = (frame + 1) * self.sweep_period_s
+        return start, start
+
+    def is_reacq_col(self, col: np.ndarray | int) -> np.ndarray | bool:
+        return np.asarray(col) < self.reacq_cols
+
+    def summary(self) -> dict:
+        return {
+            "label": self.label,
+            "scan_mode": "sinusoid",
+            "f_scan_hz": self.f_scan_hz,
+            "sweep_rate_hz": self.sweep_rate_hz,
+            "sweep_period_ms": 1000.0 * self.sweep_period_s,
+            "cols_per_sweep": self.cols_per_sweep,
+            "trim_frac": self.trim_frac,
+            "duty_cycle": self.duty_cycle,
+            "flyback_ms": 0.0,
+            "reacq_cols": self.reacq_cols,
+            "note": "sinusoidal slow axis: no flyback gap, ~100% duty, bidirectional sweeps",
+        }
