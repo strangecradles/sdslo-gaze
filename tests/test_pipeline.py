@@ -35,7 +35,7 @@ def test_pipeline_reference_passes_headline_gates():
     assert res.strip_hz >= 600.0
     # flyback is represented, never as observed motion
     assert "predicted_flyback" in res.role_counts or "missing_flyback" in res.role_counts
-    # a physiological microsaccade main sequence is recovered
+    # an expected microsaccade main sequence is recovered
     assert res.microsaccades["n_events"] >= 10
     slope = res.microsaccades["main_sequence"]["slope"]
     assert 0.4 <= slope <= 1.2
@@ -80,7 +80,7 @@ def _make_synthetic_frames(
     """A fixed random texture, cropped from a bigger canvas at a known smooth per-frame shift.
 
     Cropping a translated window out of a larger textured canvas is equivalent to the eye
-    translating a fixed sensor over the retina: each frame is the same texture, displaced by a
+    translating a fixed sensor over the imaged surface: each frame is the same texture, displaced by a
     known, smoothly-varying (dx, dy) in pixels.
     """
     rng = np.random.default_rng(seed)

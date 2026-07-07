@@ -51,6 +51,12 @@ class GapTrack:
     is an ``int8`` array of :class:`~sdslo_gaze.scan_timing.MeasurementState`
     values. Inserted flyback rows carry ``strip = -1`` and ``q = nan`` (no
     real measurement); their ``frame`` is the frame that precedes the gap.
+
+    ``sigma_arcmin`` is the predict-only 1-sigma position uncertainty (arcmin):
+    finite and growing on ``predicted_flyback`` rows (drift diffusion across the
+    gap, from :func:`~sdslo_gaze.dynamics.predict_gaussian`), ``inf`` on
+    ``missing_flyback`` rows, and ``nan`` on measured rows (whose uncertainty is
+    the registration precision floor, reported separately by :mod:`metrics`).
     """
 
     t: np.ndarray
@@ -61,6 +67,7 @@ class GapTrack:
     frame: np.ndarray
     strip: np.ndarray
     timing: ScanTiming
+    sigma_arcmin: np.ndarray
 
     def observed(self) -> np.ndarray:
         """Boolean mask of samples carrying a real measurement."""
@@ -89,40 +96,65 @@ def _reject_implausible_motion(
     *,
     max_speed_arcmin_s: float,
     max_micro_step_arcmin: float,
+    max_step_speed_arcmin_s: float,
     max_iterations: int = 12,
 ) -> np.ndarray:
     """Iteratively flag observed samples with physically implausible motion.
 
-    Returns a boolean mask (same length as inputs) of samples to reject: for
-    each bad consecutive pair (speed too high, or too big a jump over too
-    short an interval), the lower-quality member of the pair is dropped.
+    Three tests are applied to the currently-plausible samples in time order,
+    and the loop repeats until nothing new is flagged. All three are
+    **rate-invariant** (they compare velocities and geometry, never a raw
+    displacement over a fixed time window):
+
+    * **Absolute speed gate** -- a consecutive pair whose implied speed exceeds
+      ``max_speed_arcmin_s`` (>~1000 deg/s is beyond any real eye rotation).
+    * **Step-velocity (mislock) gate** -- a consecutive pair faster than
+      ``max_step_speed_arcmin_s`` (~200 deg/s). Sample-to-sample steps this fast
+      are, at these small amplitudes, overwhelmingly wrong-feature locks rather
+      than real motion; removing them is what keeps the main sequence clean. The
+      cost -- clipping the rare genuine saccade faster than this ceiling -- is
+      accepted for a microsaccade instrument.
+    * **Isolated-spike gate** -- a single sample that jumps more than
+      ``max_micro_step_arcmin`` from *both* neighbours while those neighbours
+      stay within ``max_micro_step_arcmin`` of *each other* (an out-and-back
+      excursion no monotonic saccade makes).
+
+    For the first two, the lower-quality member of the pair is dropped. This
+    replaces the previous distance-over-1.5-ms test, whose effective velocity
+    threshold changed with the strip rate and switched **off entirely** below
+    ~667 Hz (where consecutive samples are >1.5 ms apart).
     """
     plausible = observed & np.isfinite(x_arcmin) & np.isfinite(y_arcmin)
     rejected = np.zeros(t.shape, dtype=bool)
+    thr = float(max_micro_step_arcmin)
+    speed_ceiling = min(float(max_speed_arcmin_s), float(max_step_speed_arcmin_s))
     for _ in range(max(1, int(max_iterations))):
         idx = np.flatnonzero(plausible)
         if idx.size < 2:
             break
-        dt = np.diff(t[idx])
-        dist = np.hypot(np.diff(x_arcmin[idx]), np.diff(y_arcmin[idx]))
+        xi, yi, ti, qi = x_arcmin[idx], y_arcmin[idx], t[idx], q[idx]
+        dt = np.diff(ti)
+        dist = np.hypot(np.diff(xi), np.diff(yi))
         speed = np.divide(dist, dt, out=np.full_like(dist, np.inf), where=dt > 0)
-        bad_pair = (
-            np.isfinite(speed)
-            & (dt > 0)
-            & (
-                (speed > float(max_speed_arcmin_s))
-                | ((dt <= 0.0015) & (dist > float(max_micro_step_arcmin)))
-            )
-        )
-        if not np.any(bad_pair):
-            break
         to_reject: set[int] = set()
+
+        # Speed gates on consecutive pairs (absolute + step-velocity mislock ceiling).
+        bad_pair = np.isfinite(speed) & (dt > 0) & (speed > speed_ceiling)
         for k in np.flatnonzero(bad_pair):
-            a = int(idx[k])
-            b = int(idx[k + 1])
-            qa = q[a] if np.isfinite(q[a]) else -np.inf
-            qb = q[b] if np.isfinite(q[b]) else -np.inf
+            a, b = int(idx[k]), int(idx[k + 1])
+            qa = qi[k] if np.isfinite(qi[k]) else -np.inf
+            qb = qi[k + 1] if np.isfinite(qi[k + 1]) else -np.inf
             to_reject.add(a if qa <= qb else b)
+
+        # Isolated-spike gate on interior triples (out-and-back excursion).
+        if idx.size >= 3:
+            d_prev = dist[:-1]                                       # |p_i - p_{i-1}|
+            d_next = dist[1:]                                        # |p_{i+1} - p_i|
+            d_skip = np.hypot(xi[2:] - xi[:-2], yi[2:] - yi[:-2])    # |p_{i+1} - p_{i-1}|
+            spike = (d_prev > thr) & (d_next > thr) & (d_skip < thr)
+            for k in np.flatnonzero(spike):                         # interior point is idx[k+1]
+                to_reject.add(int(idx[k + 1]))
+
         if not to_reject:
             break
         rr = np.array(sorted(to_reject), dtype=np.int64)
@@ -141,11 +173,13 @@ def _bridge_flyback_rows(
     timing: ScanTiming,
     *,
     max_bridge_ms: float,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, ...]:
     """Build the inserted flyback rows between each pair of consecutive frames.
 
-    Returns arrays ``(t, x, y, state, q, frame, strip)`` for the new rows only
-    (empty arrays if no frame boundary has a bridgeable gap).
+    Returns arrays ``(t, x, y, state, q, frame, strip, sigma_arcmin)`` for the
+    new rows only (empty arrays if no frame boundary has a bridgeable gap).
+    ``sigma_arcmin`` is the predict-only 1-sigma position uncertainty: growing
+    across a bridged gap, ``inf`` where the gap is left missing.
     """
     strip_dt = timing.active_dt_s * max(1, int(S))
     frames_present = set(int(f) for f in np.unique(frame))
@@ -157,6 +191,7 @@ def _bridge_flyback_rows(
     new_q: list[float] = []
     new_frame: list[int] = []
     new_strip: list[int] = []
+    new_sigma: list[float] = []
 
     for f in sorted(frames_present):
         if (f + 1) not in frames_present:
@@ -198,6 +233,7 @@ def _bridge_flyback_rows(
                 new_q.append(float("nan"))
                 new_frame.append(f)
                 new_strip.append(-1)
+                new_sigma.append(float(np.sqrt(np.mean(pred.pos_var))))
         else:
             for tb in bridge_t:
                 new_t.append(float(tb))
@@ -207,6 +243,7 @@ def _bridge_flyback_rows(
                 new_q.append(float("nan"))
                 new_frame.append(f)
                 new_strip.append(-1)
+                new_sigma.append(float("inf"))
 
     return (
         np.array(new_t, dtype=np.float64),
@@ -216,6 +253,7 @@ def _bridge_flyback_rows(
         np.array(new_q, dtype=np.float64),
         np.array(new_frame, dtype=np.int64),
         np.array(new_strip, dtype=np.int64),
+        np.array(new_sigma, dtype=np.float64),
     )
 
 
@@ -232,6 +270,7 @@ def apply_scan_timing(
     max_bridge_ms: float = 35.0,
     max_speed_arcmin_s: float = 60000.0,
     max_micro_step_arcmin: float = 8.0,
+    max_step_speed_arcmin_s: float = 12000.0,
     ncc_floor: float = 0.35,
     infov: np.ndarray | None = None,
 ) -> GapTrack:
@@ -293,12 +332,13 @@ def apply_scan_timing(
         observed_now,
         max_speed_arcmin_s=max_speed_arcmin_s,
         max_micro_step_arcmin=max_micro_step_arcmin,
+        max_step_speed_arcmin_s=max_step_speed_arcmin_s,
     )
     state[rejected] = int(MeasurementState.REJECTED_MISLOCK)
 
     # (d) insert flyback rows between consecutive frames.
     observed_final = observed_mask(state)
-    (b_t, b_x, b_y, b_state, b_q, b_frame, b_strip) = _bridge_flyback_rows(
+    (b_t, b_x, b_y, b_state, b_q, b_frame, b_strip, b_sigma) = _bridge_flyback_rows(
         t_new,
         x_arcmin,
         y_arcmin,
@@ -309,6 +349,11 @@ def apply_scan_timing(
         max_bridge_ms=max_bridge_ms,
     )
 
+    # Measured rows carry no predict-only sigma (their uncertainty is the registration
+    # precision floor, reported by metrics); mark them NaN. Inserted rows carry the
+    # growing/inf sigma built above.
+    sigma = np.full(t_new.shape, np.nan, dtype=np.float64)
+
     all_t = np.concatenate([t_new, b_t])
     all_x = np.concatenate([x_arcmin, b_x])
     all_y = np.concatenate([y_arcmin, b_y])
@@ -316,6 +361,7 @@ def apply_scan_timing(
     all_q = np.concatenate([q, b_q])
     all_frame = np.concatenate([frame, b_frame])
     all_strip = np.concatenate([strip, b_strip])
+    all_sigma = np.concatenate([sigma, b_sigma])
 
     final_order = np.argsort(all_t, kind="stable")
     return GapTrack(
@@ -327,6 +373,7 @@ def apply_scan_timing(
         frame=all_frame[final_order],
         strip=all_strip[final_order],
         timing=timing,
+        sigma_arcmin=all_sigma[final_order],
     )
 
 
@@ -346,6 +393,7 @@ def sensitivity(
     max_bridge_ms: float = 35.0,
     max_speed_arcmin_s: float = 60000.0,
     max_micro_step_arcmin: float = 8.0,
+    max_step_speed_arcmin_s: float = 12000.0,
     ncc_floor: float = 0.35,
     infov: np.ndarray | None = None,
 ) -> dict[str, dict[str, float]]:
@@ -373,6 +421,7 @@ def sensitivity(
             max_bridge_ms=max_bridge_ms,
             max_speed_arcmin_s=max_speed_arcmin_s,
             max_micro_step_arcmin=max_micro_step_arcmin,
+            max_step_speed_arcmin_s=max_step_speed_arcmin_s,
             ncc_floor=ncc_floor,
             infov=infov,
         )

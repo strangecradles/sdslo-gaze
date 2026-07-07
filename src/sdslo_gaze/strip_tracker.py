@@ -1,14 +1,14 @@
 """strip_tracker.py -- 2-D NCC strip registration for high-rate SD-SLO gaze recovery.
 
-The decisive insight for high-rate 2-D gaze from a RASTER SLO capture: each frame is
+The decisive insight for high-rate 2-D gaze from a RASTER SD-SLO capture: each frame is
 built column-by-column over the frame period, so a STRIP of ``S`` consecutive
-slow-axis (column) samples is a genuine 2-D retinal patch acquired at a
+slow-axis (column) samples is a genuine 2-D image patch acquired at a
 sub-frame instant. Registering each strip against the previous frame with 2-D
 normalized cross-correlation (OpenCV ``TM_CCOEFF_NORMED``) recovers gaze at
 strip rate ``(W // S) * fps`` -- hundreds of Hz, well above the frame rate --
 without the perp aliasing that a 1-D line-scan match would suffer (a 2-D patch
 match against a 2-D reference is unique). This is the Sheehy/Roorda TSLO
-method (Biomed. Opt. Express 3(10):2611, 2012: 960 Hz @ 0.66') distilled to a
+method (960 Hz @ 0.66') distilled to a
 faithful, tested reimplementation.
 
 Axis convention (see :mod:`sdslo_gaze.units`): the SD-SLO frame is

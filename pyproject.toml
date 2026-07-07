@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sdslo-gaze"
 version = "0.1.0"
-description = "SOTA high-rate (600-960+ Hz) 2-D gaze tracking and microsaccade-waveform recovery from SD-SLO retinal imaging, with first-class scanner-flyback handling."
+description = "SOTA high-rate (600-960+ Hz) 2-D gaze tracking and microsaccade-waveform recovery from SD-SLO imaging, with first-class scanner-flyback handling."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

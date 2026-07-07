@@ -23,8 +23,9 @@ timing:
 
 gating:
   ncc_floor: 0.35
-  max_speed_arcmin_s: 60000.0
-  max_micro_step_arcmin: 8.0
+  max_speed_arcmin_s: 60000.0        # absolute artifact ceiling (~1000 deg/s)
+  max_step_speed_arcmin_s: 12000.0   # rate-invariant sample-step mislock ceiling (~200 deg/s)
+  max_micro_step_arcmin: 8.0         # isolated out-and-back spike threshold
 
 microsaccade:
   vfac: 6.0                   # Engbert-Kliegl velocity threshold factor

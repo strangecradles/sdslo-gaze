@@ -1,6 +1,6 @@
 """Oculomotor motion prior, distilled to what the flyback predict-only step needs.
 
-The research repo carries a full IMM particle prior (pursuit Ornstein-Uhlenbeck + main-sequence
+The previous repo carries a full IMM particle prior (pursuit Ornstein-Uhlenbeck + main-sequence
 saccade). For predict-only propagation across the no-acquisition flyback gap we need two things:
 
   1. a principled way to extrapolate mean position with *growing uncertainty* when no
@@ -19,19 +19,23 @@ import numpy as np
 
 from . import units
 
-# --- pursuit (fixational drift + smooth pursuit) OU parameters, in arcmin ---
+# --- pursuit / fixational-drift parameters, in arcmin ---
 #: Velocity relaxation time constant of the pursuit process.
 TAU_PURSUIT_S: float = 0.15
-#: Steady-state pursuit velocity std (repo: 6 rows/s -> arcmin/s).
-SIGMA_V_PURSUIT_ARCMIN_S: float = 6.0 * units.ARCMIN_PER_ROW_PX  # ~2.89 '/s
-#: Hard per-step acceleration cap (repo: 4000 rows/s^2 -> arcmin/s^2).
-ACCEL_CAP_ARCMIN_S2: float = 4000.0 * units.ARCMIN_PER_ROW_PX
+#: Fixational-drift diffusion coefficient (arcmin^2/s). Drift is a random walk in position,
+#: so position variance grows ~2*D*t (Cherici et al. 2012 measured D ~ 5-20 across observers;
+#: Rucci models use ~40). 20 is a mid-range value; it sets how fast the predict-only flyback
+#: uncertainty grows across the no-acquisition gap.
+DRIFT_DIFFUSION_ARCMIN2_S: float = 20.0
 
 # --- saccadic main sequence (amplitude -> peak velocity), in arcmin ---
-#: Main-sequence knee amplitude.
-A0_ARCMIN: float = 6.5
-#: Saturating peak velocity (repo: VMAX 103000 rows/s -> arcmin/s ~ 826 deg/s).
+#: Saturating peak velocity (VMAX 103000 rows/s -> arcmin/s ~ 826 deg/s; Bahill et al. 1975).
 VMAX_ARCMIN_S: float = 103000.0 * units.ARCMIN_PER_ROW_PX  # ~49582 '/s
+#: Main-sequence knee amplitude, set so the small-amplitude slope VMAX/A0 ~ 47 /s reproduces
+#: the Zuber & Stark (1965) main sequence (peak velocity [deg/s] ~ 47 * amplitude [deg]).
+#: A 12' microsaccade then peaks near ~9 deg/s, as observed; the old 6.5' knee was ~160x too
+#: small and put a 12' microsaccade at ~700 deg/s.
+A0_ARCMIN: float = VMAX_ARCMIN_S / 47.0  # ~1055 arcmin (~17.6 deg)
 
 
 def main_sequence_peak_velocity(amp_arcmin: np.ndarray | float) -> np.ndarray | float:
@@ -86,10 +90,11 @@ def predict_gaussian(state: MotionState, dt: float) -> MotionState:
     disp = state.vel * tau * (1.0 - decay)
     new_pos = state.pos + disp
     new_vel = state.vel * decay
-    # Position variance growth: diffusion of the pursuit velocity integrated over dt.
-    # Var[integral of OU velocity] ~ sigma_v^2 * tau * dt for dt on the order of tau (a standard,
-    # slightly conservative bound); exact enough for the ~10-28 ms flyback.
-    var_growth = (SIGMA_V_PURSUIT_ARCMIN_S ** 2) * tau * dt
+    # Position variance growth: fixational drift is a random walk in position, so its variance
+    # grows ~2*D*dt (Cherici et al. 2012). This is the honest uncertainty band on a predicted
+    # flyback sample -- ~0.9' after a 10 ms gap, ~1.5' after 28 ms -- and it is what
+    # gap_model surfaces as `sigma_arcmin` on each PREDICTED_FLYBACK row.
+    var_growth = 2.0 * DRIFT_DIFFUSION_ARCMIN2_S * dt
     new_var = state.pos_var + var_growth
     return replace(state, pos=new_pos, vel=new_vel, pos_var=new_var)
 

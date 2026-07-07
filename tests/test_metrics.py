@@ -144,7 +144,7 @@ def test_speed_percentiles_isolates_huge_jump_in_tail():
     x = V * t
     y_clean = np.zeros(n)
     y_jump = y_clean.copy()
-    y_jump[n // 2] += 5000.0  # single supraphysiological jump
+    y_jump[n // 2] += 5000.0  # single unphysical jump
 
     baseline = speed_percentiles(t, x, y_clean, pcts=(50, 99, 99.9))
     jumped = speed_percentiles(t, x, y_jump, pcts=(50, 99, 99.9))

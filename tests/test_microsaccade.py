@@ -19,16 +19,14 @@ FS = 1000.0
 DUR_S = 2.0
 N = int(DUR_S * FS)
 
-# Ground truth for the four injected microsaccades: amplitude follows the physiological
+# Ground truth for the four injected microsaccades: amplitude follows the expected
 # main sequence in direction (dynamics.main_sequence_peak_velocity is monotonically
 # increasing with amplitude -- larger events really are faster), but the *duration* used
 # to build each waveform is fixed at ~15 ms (the middle of the 6-30 ms microsaccade band)
-# rather than derived from dynamics' saturating macro-saccade curve: that curve saturates
-# by ~20' amplitude (A0=6.5'), which would demand sub-millisecond durations at these
-# amplitudes -- undetectable at 1 kHz and inconsistent with real microsaccade kinematics.
-# A minimum-jerk profile of the given amplitude and duration is used instead, which is
-# self-consistent (peak velocity = 1.875 * amplitude / duration) and still reproduces the
-# qualitative main-sequence trend the detector and main_sequence() are tested against.
+# rather than derived from the main-sequence peak-velocity curve. A minimum-jerk profile
+# of the given amplitude and duration is used instead, which is self-consistent (peak
+# velocity = 1.875 * amplitude / duration) and reproduces the qualitative main-sequence
+# trend the detector and main_sequence() are tested against.
 _AMPS_ARCMIN = (6.0, 12.0, 20.0, 30.0)
 _ONSETS_S = (0.3, 0.8, 1.3, 1.7)
 _DIRECTIONS_RAD = (0.4, 2.1, -1.0, 2.7)

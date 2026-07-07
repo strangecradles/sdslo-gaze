@@ -1,7 +1,7 @@
 # Architecture
 
 `sdslo-gaze` distills the validated method from the research repo into a small, tested,
-reproducible package. It tracks 2-D gaze from SD-SLO retinal video at **600–960+ Hz** and
+reproducible package. It tracks 2-D gaze from SD-SLO video at **600–960+ Hz** and
 recovers microsaccade waveforms, treating the scanner flyback as first-class missing data.
 
 ## Principles
@@ -43,5 +43,7 @@ the pursuit stimulus, then re-deriving metrics through the clean pipeline. See
 `scripts/validate_against_reference.py` and `tests/test_pipeline.py`.
 
 ## Rate → strip width (test1: W=808, fps=14.633)
-`strip_hz = (808 // S) * fps`: S=13→952 Hz, S=8→1478 Hz, S=5→2358 Hz. Default S targets
-≥960 Hz. Sheehy 2012 operated 32-px strips → 960 Hz at 0.2′; this repo matches that band.
+`strip_hz = (808 // S) * fps`: S=13→907 Hz, S=12→980 Hz, S=8→1478 Hz, S=5→2356 Hz. The
+default `target_hz=960` picks the widest strip that still clears 960 Hz → S=12 (980 Hz);
+the reference validation cache is S=8 → 1478 Hz. Sheehy 2012 operated 32-px strips → 960 Hz;
+this repo runs in the same rate band.

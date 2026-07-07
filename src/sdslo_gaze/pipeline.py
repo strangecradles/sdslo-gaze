@@ -13,8 +13,8 @@ from pathlib import Path
 
 import numpy as np
 
-from . import data_io, dynamics, gap_model, metrics, microsaccade, units
-from .scan_timing import ScanTiming, observed_mask
+from . import data_io, gap_model, metrics, microsaccade, units
+from .scan_timing import ScanTiming
 from .strip_tracker import StripTrack, track
 
 
@@ -107,6 +107,26 @@ def run(
     # the events/observed-second estimate is correct.
     duty = microsaccade.duty_cycle_report(gap.state, events, sample_hz=st.strip_hz)
 
+    # Surrogate-null control: destroy the within-frame temporal order (permute x,y among the
+    # observed samples of each frame) and re-detect. A real microsaccade population collapses;
+    # registration noise survives. The null rate is the honest yardstick for whether the
+    # detected rate is physiological (real fixation is ~1-3 microsaccades/s). Non-observed rows
+    # get unique singleton groups so they are never permuted into observed positions.
+    n_shuffle = 20
+    grp = gap.frame.astype(np.int64).copy()
+    not_obs = ~obs
+    grp[not_obs] = -1 - np.arange(int(not_obs.sum()), dtype=np.int64)
+    null_events = microsaccade.surrogate_null(
+        gap.t, gap.x_arcmin, gap.y_arcmin, grp,
+        n_shuffle=n_shuffle, rng=np.random.default_rng(0), observed=obs,
+    )
+    null_per_shuffle = len(null_events) / n_shuffle
+    surrogate = {
+        "n_shuffle": n_shuffle,
+        "mean_events_per_shuffle": null_per_shuffle,
+        "null_fraction_of_real": (null_per_shuffle / len(events)) if events else float("nan"),
+    }
+
     # 5. metrics (observed-only)
     prec = metrics.precision_floor(gap.t[obs], gap.x_arcmin[obs], gap.y_arcmin[obs])
     speed = metrics.speed_percentiles(gap.t[obs], gap.x_arcmin[obs], gap.y_arcmin[obs])
@@ -139,7 +159,9 @@ def run(
         speed_arcmin_s=speed,
         microsaccades={
             "n_events": len(events),
+            "rate_hz": duty.get("rate_hz"),
             "main_sequence": ms_main,
+            "surrogate_null": surrogate,
         },
         dot_correlation=dot_corr,
         _gap=gap,
@@ -210,7 +232,11 @@ def _render_md(p: dict) -> str:
         "",
         "## Microsaccades",
         f"- events: {p['microsaccades']['n_events']}",
+        f"- rate: {p['microsaccades'].get('rate_hz', float('nan')):.2f} /observed-s "
+        "(physiological fixation ~1-3/s)",
         f"- main sequence: {p['microsaccades']['main_sequence']}",
+        f"- surrogate-null control: {p['microsaccades'].get('surrogate_null')} "
+        "(mean events per shuffled trace; a real population should collapse toward 0)",
         "",
         "## Notes",
         "- The active/flyback split is a hardware assumption, not measured from data (see docs/flyback.md).",

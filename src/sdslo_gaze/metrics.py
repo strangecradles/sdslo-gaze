@@ -1,4 +1,4 @@
-"""metrics.py — truth-optional precision, correlation, and speed diagnostics.
+"""metrics.py — truth-optional precision, correlation, and speed measures.
 
 These functions score a 2-D gaze trace (plain numpy arrays, arcmin units) without
 requiring any ground truth:
@@ -9,7 +9,7 @@ requiring any ground truth:
 - ``correlate_dot``: correlation vs a pursuit stimulus, with an honest held-out
   affine-calibration split so the reported r is not an in-sample fit artifact.
 - ``speed_percentiles``: instantaneous-speed distribution, used to surface
-  supraphysiological jumps caused by naive/uniform timing assumptions.
+  unphysical jumps caused by naive/uniform timing assumptions.
 
 All inputs/outputs are plain numpy arrays; no dependency on the rest of the
 package beyond ``numpy``/``scipy``. Time arrays are assumed near-uniformly
@@ -328,7 +328,7 @@ def speed_percentiles(
 
     Speed is ``|d(position)| / dt`` between consecutive samples. Reports the
     requested percentiles under keys ``"p{pct}"`` (e.g. ``"p50"``,
-    ``"p99.9"``). Useful for surfacing supraphysiological jumps caused by
+    ``"p99.9"``). Useful for surfacing unphysical jumps caused by
     naive/uniform timing assumptions: those jumps are isolated to the far
     upper tail (e.g. p99.9) without moving the median.
     """

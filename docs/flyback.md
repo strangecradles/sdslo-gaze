@@ -6,7 +6,7 @@ of the source data plus a SOTA literature review.
 
 ## 1. The physics
 
-An SD-SLO builds each retinal frame with two scanners:
+An SD-SLO builds each image frame with two scanners:
 
 | Axis | Scanner | Role | Rate |
 |------|---------|------|------|
@@ -25,7 +25,7 @@ samples, so the flyback appears as pure elapsed dead-time *between* frames.
   - `active40ms`  → 40.0 ms active + 28.3 ms flyback → active line rate 20,200 Hz
   - `flyback10ms` → 58.3 ms active + 10.0 ms flyback → active line rate 13,850 Hz
 
-**Why "supraphysiological jumps" appear:** if the 808 columns are (wrongly) assumed to
+**Why "unphysical jumps" appear:** if the 808 columns are (wrongly) assumed to
 spread uniformly over the whole 68.34 ms period, then the eye displacement accumulated
 during the *unobserved* flyback gets attributed to the tiny inter-frame sample interval,
 implying eye speeds up to ~438,000 arcmin/s — physically impossible. Correct handling
@@ -55,7 +55,7 @@ sensitivity across the 40/28 ↔ 58/10 bracket.
 ### Cross-modal channels (measured)
 | Channel | Rate | Period | Use |
 |---------|------|--------|-----|
-| SD-SLO frame | 14.633 Hz | 68.34 ms | primary retinal image |
+| SD-SLO frame | 14.633 Hz | 68.34 ms | primary scan image |
 | Cam Right (pupil cam) | **56.876 Hz** | 17.58 ms | VIO-style absolute anchor across the gap |
 | Machine pupil tracker | 32.51 Hz | 30.76 ms | coarse gaze reference (already used by gap bridge) |
 

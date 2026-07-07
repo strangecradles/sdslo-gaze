@@ -87,7 +87,7 @@ def test_apply_scan_timing_basic_retiming_and_labeling():
     assert np.any((gaps_ms > 8.0) & (gaps_ms < 15.0))
 
 
-def test_suprphysiological_jump_is_rejected_and_excluded():
+def test_unphysical_jump_is_rejected_and_excluded():
     timing = ScanTiming.from_model("flyback10ms", fps=FPS, sweeps_per_frame=W)
     track = _synthetic_track(timing)
     jump_idx = 50  # well inside frame 0, away from any frame boundary

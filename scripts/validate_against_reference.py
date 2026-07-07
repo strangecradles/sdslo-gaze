@@ -6,7 +6,7 @@ recovered high-rate trajectory reproduces the reference within tolerance:
   - strip rate is in the 600-960+ Hz target band,
   - the measurement-state composition is sane (observed-only accuracy, flyback labeled missing),
   - held-out correlation vs the pursuit dot is comparable to the champion (r_x ~ 0.9),
-  - a microsaccade main sequence is present with physiological slope.
+  - a microsaccade main sequence is present with expected slope.
 
 Usage:  SDSLO_DATA_ROOT=/path/to/gaze-model python scripts/validate_against_reference.py
 Exit code 0 = all gates pass.
@@ -55,7 +55,7 @@ def main() -> int:
                    f"{n_ev} events"))
     slope = ms["main_sequence"].get("slope", float("nan"))
     slope_ok = GATES["main_seq_slope_lo"] <= slope <= GATES["main_seq_slope_hi"]
-    checks.append(("main-sequence slope physiological", slope_ok,
+    checks.append(("main-sequence slope in-range", slope_ok,
                    f"slope={slope:.3f}, r={ms['main_sequence'].get('r', float('nan')):.3f}"))
 
     if res.dot_correlation is not None:

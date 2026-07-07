@@ -16,48 +16,57 @@
   "target_hz": 960.0,
   "strip_width": 8,
   "strip_hz": 1477.9331436699858,
-  "n_observed": 67712,
+  "n_observed": 65059,
   "role_counts": {
-    "observed_active": 65567,
-    "observed_reacq": 2145,
+    "observed_active": 63040,
+    "observed_reacq": 2019,
     "predicted_flyback": 73656,
     "missing_flyback": 0,
-    "rejected_mislock": 7409,
+    "rejected_mislock": 10062,
     "unlocked": 28303
   },
   "duty_cycle_report": {
-    "observed_fraction": 0.3823808448159024,
+    "observed_fraction": 0.36739891574429634,
     "predicted_fraction": 0.41594759430765754,
     "missing_fraction": 0.0,
-    "n_events": 262,
-    "rate_hz": 5.718609458316639,
-    "fully_observed_events": 262,
-    "gap_straddling_events": 0
+    "n_events": 271,
+    "rate_hz": 6.156256350920952,
+    "fully_observed_events": 271,
+    "gap_straddling_events": null,
+    "gap_straddling_search": "not_implemented"
   },
   "precision_arcmin": {
-    "rms_x": 3.837200790207419,
-    "rms_y": 1.4383117597368633
+    "rms_x": 2.124509145627775,
+    "rms_y": 0.6952468926324954
   },
   "speed_arcmin_s": {
-    "p50": 758.3107559175088,
-    "p99": 17525.267755005458,
-    "p99.9": 20030.596265491185
+    "p50": 690.0726189329959,
+    "p99": 11315.402600215284,
+    "p99.9": 11924.715484908571
   },
   "microsaccades": {
-    "n_events": 262,
+    "n_events": 271,
+    "rate_hz": 6.156256350920952,
     "main_sequence": {
-      "slope": 0.5197367597660565,
-      "intercept": 2.253758874621575,
-      "r": 0.8069386119153457,
-      "n": 262
+      "slope": 0.6023418234041775,
+      "intercept": 2.0956601293709025,
+      "r": 0.8625825420228458,
+      "n": 271
+    },
+    "surrogate_null": {
+      "n_shuffle": 20,
+      "mean_events_per_shuffle": 231.8,
+      "null_fraction_of_real": 0.8553505535055351
     }
   },
   "dot_correlation": {
-    "r_x": 0.8438387342507877,
-    "r_y": 0.7626588054097844,
-    "rms_x_arcmin": 21.859483971655813,
-    "rms_y_arcmin": 26.493841761845577,
-    "n": 13543
+    "r_x": 0.8446925772994109,
+    "r_y": 0.7509278005438911,
+    "rms_x_arcmin": 22.529578702175755,
+    "rms_y_arcmin": 26.622692661275373,
+    "n": 13012,
+    "held_out": true,
+    "n_train": 52047
   },
   "blind_gap_waveform_claim_supported": false
 }

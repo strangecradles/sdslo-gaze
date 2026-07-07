@@ -1,7 +1,7 @@
 # sdslo-gaze
 
 High-rate (**600–960+ Hz**) two-dimensional gaze tracking and **microsaccade-waveform
-recovery** from SD-SLO (spectral-domain scanning laser ophthalmoscope) retinal imaging, with
+recovery** from SD-SLO (spectral-domain scanning laser) imaging, with
 first-class handling of the scanner **flyback** dead-time.
 
 This is the distilled, production-grade version of an internal research codebase. It keeps only
@@ -10,10 +10,10 @@ explicit and honest, and ships with tests, config, and reproducible manifests.
 
 ## Why this exists
 
-An SD-SLO builds each retinal frame by sweeping a slow galvanometer across 808 columns during an
+An SD-SLO builds each image frame by sweeping a slow galvanometer across 808 columns during an
 **active** down-ramp, then **flying back** to the top with **no data acquisition**. The encoded
 video hides this: it stores only acquired columns on a uniform clock, so naive timing smears the
-unobserved flyback motion into an impossibly short interval and manufactures *supraphysiological*
+unobserved flyback motion into an impossibly short interval and manufactures *unphysical*
 gaze jumps.
 
 The method here:
@@ -82,5 +82,10 @@ Raw captures and caches are **not** vendored (large; `.gitignore`d). This packag
 
 ## Status & scope
 
-Validated on the `test1` pursuit raster against the research repo's champion trajectory. Absolute
-waveform fidelity against an artificial eye remains future work. Not a medical device.
+Validated on the `test1` pursuit raster against the research repo's champion trajectory: held-out
+pursuit-dot correlation r≈0.87, and a positive, high-correlation microsaccade main sequence. The
+current registration-noise floor is ~2.2′ horizontal / ~0.8′ vertical — above the ≤0.2′ AOSLO SOTA
+(Sheehy 2012), reflecting the slow-axis drift of single-reference incremental registration;
+tightening this and reconciling the detected microsaccade rate against the surrogate-null control
+(now reported in the manifest) is the main open accuracy work. Absolute waveform fidelity against
+an artificial-eye rig remains future work. Research code, not a certified product.
