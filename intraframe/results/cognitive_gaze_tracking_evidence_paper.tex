@@ -1,0 +1,1030 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage[table]{xcolor}
+\usepackage{hyperref}
+\usepackage{microtype}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+
+\graphicspath{{cognitive_gaze_figures/}{./}}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!45!black,
+  citecolor=blue!45!black,
+  urlcolor=blue!55!black
+}
+
+\definecolor{Navy}{HTML}{122B3E}
+\definecolor{Teal}{HTML}{007D84}
+\definecolor{Blue}{HTML}{316FAA}
+\definecolor{Amber}{HTML}{BC7918}
+\definecolor{Red}{HTML}{AD413D}
+\definecolor{Light}{HTML}{D3D8DA}
+\definecolor{PaleTeal}{HTML}{E2F2F1}
+\definecolor{PaleBlue}{HTML}{E7EFF7}
+\definecolor{PaleAmber}{HTML}{FBF1D9}
+\definecolor{PaleRed}{HTML}{F5DEDC}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.65em}
+\setlist[itemize]{topsep=0.25em,itemsep=0.2em}
+\setlist[enumerate]{topsep=0.25em,itemsep=0.2em}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small SD-SLO gaze tracking from first principles}
+\rhead{\small \thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\newcommand{\evidence}[1]{\textsc{\color{Teal}#1}}
+\newcommand{\missing}{\textsc{\color{Red}missing}}
+\newcommand{\hypothesis}{\textsc{\color{Red}hypothesis}}
+\newcommand{\fixture}{\textsc{\color{Amber}fixture}}
+\newcommand{\measured}{\textsc{\color{Teal}measured}}
+\newcommand{\derived}{\textsc{\color{Blue}derived}}
+\newcommand{\programfact}{\textsc{\color{Navy}program fact}}
+
+\title{\textbf{From Scanned Photons to Time-Resolved Retinal Gaze}\\
+\large A First-Principles Engineering and Evidence Audit of an SD-SLO Cognitive Platform}
+\author{Kodiak Sciences gaze-tracking program}
+\date{22 July 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This document explains how a scanning laser ophthalmoscope (SLO), originally optimized for
+retinal imaging, can be used to estimate eye motion and support synchronized cognitive experiments.
+It is written for a technically literate reader who does not already know the instrument.
+The analysis begins with the optical and electronic hardware, derives the scanner and sampling
+clocks, and then follows one retinal displacement estimate through rectification, strip formation,
+preprocessing, normalized cross-correlation, quality gating, subpixel placement, calibration,
+and trajectory assembly. Numerical statements are separated into measured values, explicit
+derivations, literature reports, synthetic fixtures, program facts, hypotheses, and missing inputs.
+
+For the candidate 10 kHz sinusoidal fast axis, bidirectional use produces a 20 kline/s clock and a
+50 $\mu$s one-way sweep. A 24-line strip therefore spans 1.20 ms; a 6-line stride places correlated
+outputs every 0.30 ms during active acquisition. Existing synthetic experiments demonstrate
+sub-arcminute registration under their declared model, while real retinal data demonstrate
+lock behavior and coarse pursuit correspondence without providing independent high-rate eye-motion
+truth. Two conditional timing models expose intervals not explained by active lines, but they must
+not be combined: the legacy capture assumes 58.34 ms active plus 10 ms dead time, while applying the
+candidate 20 kline/s clock to 808 legacy lines yields 40.4 ms active plus 27.94 ms unexplained at
+14.633 fps. Neither identifies physical scanner flyback without telemetry.
+
+The paper also separates biological event rate, waveform bandwidth, acquisition rate, and spatial
+precision for saccades, microsaccades, drift, tremor, and pupil dynamics. Tremor is intrinsically
+arcsecond-scale, but high-rate drift increments and fine direction estimates for the smallest
+microsaccades can also become arcsecond-limited. Published adaptive-optics SLO performance cannot be
+transferred to this conventional SD-SLO without validation. Continuous optical operation is treated
+through a parameterized exposure framework only: laser-product classification, ophthalmic patient
+exposure, and medical-device classification are distinct evaluations, and the measured source and
+fault inputs required for a safety conclusion are presently incomplete.
+\end{abstract}
+
+\textbf{Keywords:} scanning laser ophthalmoscopy; retinal image registration; eye tracking;
+normalized cross-correlation; fixational eye motion; scanner timing; laser safety; OPM-MEG;
+cognitive instrumentation.
+
+\tableofcontents
+\newpage
+
+\section{Purpose, scope, and evidence discipline}
+
+\subsection{Why the system requires a new architecture review}
+
+The program began with a retinal-health objective: a portable SLO or OCT device that could acquire
+high-quality retinal images outside the clinic and provide denser longitudinal information than
+monthly visits. That objective naturally prioritizes image quality, patient workflow, portability,
+and intermittent acquisition. A frame can be judged successful if it is clinically interpretable,
+even when time between frames is not observed.
+
+The emerging objective is different. The device is now being considered as a cognitive and
+attention measurement platform that can synchronize retinal motion, pupil diameter, visual
+stimulus timing, behavior, and OPM-MEG. OPM coexistence is accepted here as a characterized
+\programfact; the production requirement is to bind that result to controlled hardware,
+firmware, and experimental configurations. Cognitive experiments place much greater weight on
+event time, continuity, uncertainty, and explicit missingness. A 10 ms unobserved interval can be
+negligible for a still retinal image but decisive for microsaccade onset or direction.
+
+The architecture question is therefore not whether the prior medical design was ``wrong.'' Many
+of its features---confocal retinal imaging, optical precision, calibration discipline, safety
+controls, and portable mechanics---remain valuable. The question is which assumptions were
+appropriate only for intermittent imaging and should now be changed, made configurable, or held
+open before production hardware is frozen.
+
+\subsection{Evidence classes}
+
+Every quantitative or factual claim in this paper is assigned one of the following roles.
+
+\begin{table}[ht]
+\centering
+\caption{Evidence classes used throughout the analysis.}
+\begin{tabularx}{\textwidth}{>{\bfseries}p{0.17\textwidth} X}
+\toprule
+Class & Meaning\\
+\midrule
+\measured & Directly measured on the stated hardware, file, or capture.\\
+\derived & Calculated from cited inputs using an explicit formula.\\
+Literature & Reported by an external primary or authoritative source.\\
+\fixture & Known-reference software or synthetic experiment; not biological validation.\\
+\programfact & Project history or capability supplied by the program and accepted as true.\\
+\hypothesis & Candidate design value or scientific interpretation requiring validation.\\
+\missing & Required value is absent; no numerical conclusion is permitted.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+This policy prevents four common category errors: synthetic known truth is not silently promoted to
+human validation; predicted samples are not promoted to observations; nominal eye geometry is not
+promoted to subject-specific calibration; and a symbolic exposure equation is not promoted to a
+safety determination. The machine-readable source of truth is
+\path{cognitive_gaze_evidence.json}. Generated figures are bound to that ledger, the generator,
+and input hashes in \path{cognitive_gaze_figure_manifest.json}.
+
+\section{Instrument primer: how an SLO creates retinal data}
+
+\subsection{Optical and electronic path}
+
+A scanning laser ophthalmoscope is a point-scanning retinal camera. An illumination source is
+focused to a small retinal spot. A fast scanner moves that spot across one image axis, while a slow
+scanner advances the line position along the other axis. Returning retinal light is descanned,
+detected, amplified, and digitized by an analog-to-digital converter (ADC). The fundamental
+measurement is therefore not a two-dimensional image but a time series:
+\[
+  \mathcal D = \{I(t_k), x_s(t_k), y_s(t_k), b(t_k), r_k\}_{k=1}^{N},
+\]
+where $I$ is detector intensity, $(x_s,y_s)$ is scanner position, $b$ is illumination/blanking
+state, and $r_k$ collects validity and revision metadata. Image formation maps those samples to a
+retinal coordinate grid.
+
+The distinction matters because eye motion occurs while the image is being scanned. If $R(x,y)$ is
+a stationary retinal reflectance pattern and $\mathbf d(t)$ is eye displacement, the detector can
+be approximated as
+\[
+  I(t) \approx R\!\left(x_s(t)-d_x(t),\,y_s(t)-d_y(t)\right)+\eta(t),
+\]
+with noise and unmodeled contrast represented by $\eta(t)$. Early and late parts of one nominal
+frame therefore correspond to different eye positions. Motion is written into the raster as vessel
+shear and displacement.
+
+\subsection{Fast and slow axes}
+
+The candidate fast scanner follows a 10 kHz full sinusoid. One complete cycle is
+\[
+  T_{\mathrm{sine}}=\frac{1}{10{,}000}=100~\mu\mathrm{s}.
+\]
+If both directions are acquired, each half-cycle is a line:
+\[
+  T_{\mathrm{line}}=50~\mu\mathrm{s},\qquad
+  f_{\mathrm{line}}=20{,}000~\mathrm{lines/s}.
+\]
+The fast axis does not move uniformly. With retinal amplitude $A$,
+\[
+  x(t)=A\sin(2\pi f t+\phi),\qquad
+  v(t)=2\pi fA\cos(2\pi f t+\phi).
+\]
+Speed is maximal at field center and approaches zero at the turnarounds. Uniform-time ADC samples
+are consequently sparse in retinal distance near field center and dense near the edges.
+
+The slow scanner advances from line to line. A frame is a software grouping of these sequential
+measurements, not an instantaneous exposure. For 808 lines at the candidate bidirectional rate,
+\[
+  T_{808} = \frac{808}{20{,}000}=40.4~\mathrm{ms}.
+\]
+This is a \derived{} active-line time. It does not reveal the present slow-axis return waveform,
+blanking, or optical duty cycle.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=\textwidth]{01_scan_physics.png}
+\caption{Fast-axis kinematics and sampling. The ADC samples uniformly in time, while scanner
+velocity makes sample spacing nonuniform in retinal distance.}
+\label{fig:scan}
+\end{figure}
+
+\subsection{Retinal scale is a model until it is calibrated}
+
+The technical note uses a 24 mm nominal axial length and a 48$^\circ$ optical field. The Bennett
+retinal magnification model \cite{Bennett1994} gives
+\[
+  q=0.01306(AL-1.82)=0.2896708~\mathrm{mm/deg},
+\]
+and hence a nominal field width
+\[
+  W=48q=13.9042~\mathrm{mm}.
+\]
+The arithmetic is \derived, but the 24 mm eye and stated field are \hypothesis{} design inputs.
+They must not be interpreted as measured subject anatomy. Image displacement can be estimated in
+pixels without this model; conversion to degrees, arcminutes, or millimeters requires explicit
+spatial calibration and, for physical retinal distance, eye-specific biometry.
+
+\section{Bandwidth, sampling, and spatial information}
+
+\subsection{Analog bandwidth becomes spatial blur}
+
+The measured end-to-end analog bandwidth at the ADC input is 10 MHz and is modeled in the technical
+note as a one-pole response. The time constant and 10--90\% rise time are
+\[
+  \tau=\frac{1}{2\pi B}=15.915~\mathrm{ns},\qquad
+  t_{10\text{--}90}=\ln(9)\tau=34.970~\mathrm{ns}.
+\]
+At the modeled center velocity of 436.8 m/s, this corresponds to a 15.275 $\mu$m electronic edge.
+Convolving the electronic response with the assumed optical line-spread function yields an
+18.034 $\mu$m combined center edge in the note's model. The bandwidth is measured; the one-pole
+shape and 10 $\mu$m Airy first-zero diameter are modeling assumptions.
+
+The key point is that ``more stored pixels'' cannot restore analog information. A denser output
+grid can make interpolation smoother, but optical blur, detector bandwidth, ADC rate, and noise set
+the recoverable information.
+
+\subsection{ADC samples and output grids}
+
+A 50 MS/s candidate ADC acquires
+\[
+  N_{\mathrm{raw}}=(50\times10^6)(50\times10^{-6})=2500
+\]
+samples per one-way sweep. At field center the modeled raw spacing is
+\[
+  \Delta x_{\mathrm{center}}=\frac{436.8~\mathrm{m/s}}{50\times10^6~\mathrm{s^{-1}}}
+  =8.736~\mu\mathrm{m}.
+\]
+Output-grid pitch should therefore be interpreted relative to both raw sampling and the modeled
+18.034 $\mu$m edge. A 1600-column image may be useful for interpolation and registration but does
+not imply 1600 independent optical resolution elements.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=\textwidth]{02_resolution_sampling.png}
+\caption{Bandwidth, noise, sampling, and output-grid trade-offs. Increasing bandwidth sharpens the
+modeled edge but increases integrated noise; increasing output columns reduces grid pitch but does
+not create new optical information.}
+\label{fig:resolution}
+\end{figure}
+
+\subsection{Rectification or ``desinusoiding''}
+
+Desinusoiding maps uniform-time samples to an ascending retinal coordinate. If an ideal sinusoid is
+used, the inverse coordinate map is derived from $x(t)$. In production, a measured position
+look-up table (LUT) should replace the ideal model. Detector delay must be corrected before
+interpolation, because a time offset becomes a direction-dependent spatial error. Forward and
+reverse lines must be mapped to one declared coordinate orientation, while turnaround, blanked, and
+invalid samples remain explicit.
+
+Rectification changes coordinates; it cannot recover photons, bandwidth, or samples that were not
+acquired. This is an important boundary when discussing frame gaps or scanner return.
+
+\section{From retinal texture to a gaze trajectory}
+
+\subsection{Why retinal registration can measure eye motion}
+
+Retinal vessels and other stable structures provide a texture coordinate system. Over a sufficiently
+short interval, a strip extracted from the moving raster should resemble a translated region of a
+reference retina. Estimating the translation that maximizes similarity produces one displacement
+sample. Repeating the operation over overlapping strips creates a high-rate relative trajectory.
+
+This measurement model assumes that local appearance is sufficiently stable after preprocessing,
+that motion within a strip is not too large, that the reference contains the corresponding field,
+and that the correlation peak is identifiable. Violations should produce explicit rejected states,
+not silently filled positions.
+
+\subsection{Strip aperture and output spacing}
+
+Strip width and stride control different physical quantities. For width $W_s$, stride $S_s$, and
+line rate $f_L$,
+\[
+  T_{\mathrm{aperture}}=\frac{W_s}{f_L},\qquad
+  T_{\mathrm{spacing}}=\frac{S_s}{f_L},\qquad
+  f_{\mathrm{output}}=\frac{f_L}{S_s}.
+\]
+For the 24/6 example at 20 kline/s,
+\[
+  T_{\mathrm{aperture}}=1.20~\mathrm{ms},\qquad
+  T_{\mathrm{spacing}}=0.30~\mathrm{ms},\qquad
+  f_{\mathrm{output}}=3.33~\mathrm{kHz}.
+\]
+Adjacent estimates share $1-S_s/W_s=75\%$ of their lines. Thus 3.33 kHz is the active output
+spacing, not an independent photon-information rate. Wider strips usually improve registration
+signal-to-noise at the cost of temporal averaging; smaller stride increases localization density at
+the cost of stronger correlation among outputs.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=\textwidth]{04_strip_overlap.png}
+\caption{Overlapping strips. Width sets the temporal aperture; stride sets the spacing between
+successive, correlated estimates.}
+\label{fig:strips}
+\end{figure}
+
+\subsection{Preprocessing and normalized cross-correlation}
+
+Broad illumination variation can dominate raw intensity without helping registration. The current
+workflow uses operations such as debanding, local-mean removal, and difference-of-Gaussians (DoG)
+filtering to emphasize vessel-scale structure. These operations improve the numerical matching
+problem; they do not improve the biological optical resolution.
+
+For template $T$ and reference search region $R$, normalized cross-correlation (NCC) at displacement
+$(u,v)$ is
+\[
+  \operatorname{NCC}(u,v)=
+  \frac{\sum_{x,y}[T(x,y)-\bar T][R(x+u,y+v)-\bar R_{u,v}]}
+  {\sqrt{\sum_{x,y}[T(x,y)-\bar T]^2
+  \sum_{x,y}[R(x+u,y+v)-\bar R_{u,v}]^2}}.
+\]
+Local mean subtraction suppresses additive brightness offsets, while energy normalization makes
+the score less sensitive to local contrast magnitude. The response over all $(u,v)$ is a 2-D
+correlation surface. Peak location gives displacement, peak height is one quality measure, peak
+shape exposes ambiguity, and a boundary peak can indicate that motion exceeded the search region.
+
+The implementation refines the integer response maximum independently in $x$ and $y$ using a
+three-point parabolic vertex. This estimates the local maximum of the sampled response; it does not
+create optical resolution. A displacement is accepted only when acquisition validity and
+registration quality pass their respective gates.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=\textwidth]{03_pipeline_walkthrough.png}
+\caption{End-to-end strip registration: retinal data, strip selection, preprocessing, bounded
+search, NCC surface, and time-stamped displacement.}
+\label{fig:pipeline}
+\end{figure}
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=\textwidth]{05_ncc_placement.png}
+\caption{One accepted correlation peak places a moving vessel strip into the reference coordinate
+system. The displayed integer peak is for visual clarity; production uses subpixel refinement.}
+\label{fig:placement}
+\end{figure}
+
+\subsection{Time assignment, calibration, and coordinate frames}
+
+One trajectory row should contain more than a pair of coordinates. A minimal representation is
+\[
+  z_i =
+  \left[t_i,\Delta x_i,\Delta y_i,q_i,a_i,e_i,p_i,c_i,r_i\right],
+\]
+where $t_i$ is the strip-center hardware time, $q_i$ is registration quality, $a_i$ is acquisition
+state, $e_i$ is estimate state, $p_i$ records prediction provenance, $c_i$ identifies calibration,
+and $r_i$ identifies the hardware/software revision. Strip-center timing acknowledges that each
+estimate integrates over a finite aperture.
+
+The relative pixel displacement must then pass through an explicit transform chain:
+\[
+  \Delta \mathbf p_{\mathrm{raw}}
+  \xrightarrow{\text{direction/LUT}}
+  \Delta \mathbf p_{\mathrm{rect}}
+  \xrightarrow{\mathbf C_{\mathrm{tracker}}}
+  \Delta \mathbf p_{\mathrm{retina}}
+  \xrightarrow{\mathbf C_{\mathrm{spatial}}}
+  \Delta \boldsymbol\theta_{\mathrm{eye}}.
+\]
+The chain includes forward/reverse line orientation, scanner-position LUT, detector delay,
+cross-axis coupling, pixel anisotropy, sign convention, and spatial scale. Reference recentering or
+replacement must be logged because it changes the coordinate origin.
+
+\subsection{Observed, rejected, predicted, and missing are not interchangeable}
+
+The production data model should preserve at least four estimate states:
+
+\begin{itemize}
+  \item \textbf{OBSERVED}: photons were acquired and registration passed acceptance criteria;
+  \item \textbf{REJECTED}: photons were acquired, but the estimate failed a declared validity or
+  quality gate;
+  \item \textbf{PREDICTED}: a dynamical model emitted an estimate without a new accepted
+  observation; the horizon and source observation must remain attached;
+  \item \textbf{MISSING}: no usable acquisition exists for that interval.
+\end{itemize}
+
+Conflating these states creates false continuity and biases downstream cognitive models.
+Prediction can be valuable for control or display stabilization, but it is a model output, not a
+retinal observation. A rejected aperture is also scientifically different from a missing interval:
+the former contains photons whose registration was unreliable; the latter contains no usable
+measurement.
+
+\section{Current evidence and claim boundaries}
+
+\subsection{Synthetic recovery}
+
+The synthetic fixture begins with a single observed retinal frame smoothed by a 0.7-pixel Gaussian
+to form a known-reference surrogate. It imposes known motion and calibrated synthetic noise, runs
+the registration pipeline, and compares estimated and true displacement. This is the correct
+environment for testing implementation logic and controlled failure modes. At the 24-line width,
+6-line stride, DoG(1,8), spatial-NCC operating point, the current result is
+\fixture{} 0.05221 arcmin RMSE with 393/393 good locks
+(\texttt{synthetic\_precision\_24\_6}).
+
+This is evidence that the pipeline can recover motion generated by the fixture. It is not evidence
+that a human eye can be tracked at that numerical precision under the real device's optical blur, speckle,
+scanner nonlinearity, calibration error, physiological deformation, and acquisition gaps. The
+appropriate next step is to add realism one perturbation at a time and then test against independent
+physical truth.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=\textwidth]{operating_curve.png}
+\caption{Synthetic known-truth recovery. The fixture isolates algorithm behavior but does not
+constitute biological or whole-device validation.}
+\label{fig:synthetic}
+\end{figure}
+
+\subsection{Restricted 10 ms waveform fixture}
+
+A second fixture injects minimum-jerk events into a real-frame-derived morphology at the measured
+15.242 dB structure SNR. The noise model uses 15\% speckle power plus Gaussian noise and adds
+two-dimensional Ornstein--Uhlenbeck drift. The event orientation is vertical along the
+fast/image-row axis; it is not a two-axis microsaccade validation. At the 32-line width,
+4-line stride operating point, the \fixture{} result recovers a 10 arcmin, 10 ms event in 3/3
+trials under both 40.0 and 58.3 ms active-time brackets
+(\texttt{synthetic\_10ms\_recovery\_32\_4}). Three trials are not enough to establish a reliable
+recovery probability: the corresponding Wilson interval is 0.439--1.000.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=\textwidth]{waveform_recovery.png}
+\caption{Restricted synthetic waveform recovery. The vertical 10 ms event, real-frame-derived
+morphology, declared noise model, and three-trial count define the scope of the result.}
+\label{fig:waveform}
+\end{figure}
+
+\subsection{Real retinal frame and pursuit fixture}
+
+On the selected real retinal frame, 45 of 47 strips lock. This is a \measured{} lock result on that
+capture and demonstrates that the algorithm finds a coherent trajectory through real texture.
+No independent high-rate eye-motion truth is available for that frame, so biological accuracy and
+precision cannot be calculated.
+
+The longer pursuit demonstration compares SLO-derived motion with a lower-rate eye-camera record.
+The \measured{} held-out correspondence is axis-specific:
+$r_x=0.8729$, $r_y=0.8574$, with residual RMS of 16.73 and 23.73 arcmin, respectively
+(\texttt{held\_out\_pursuit\_correlation}). The full result contains 66,058 active observations,
+2,147 reacquisition observations, 17,391 predicted dead-time samples, 6,916 rejected mislocks, and
+28,303 unlocked rows. These values are useful integration checks, but do not establish high-rate
+SLO truth because the comparator has different bandwidth, calibration, latency, and spatial
+precision. The 10 ms interval and its predicted samples come from an explicit unmeasured timing
+hypothesis and must remain distinguishable from observed SLO samples.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=\textwidth]{real_demo.png}
+\caption{Single-frame real-data demonstration. Accepted strips form a plausible trajectory, but
+there is no independent high-rate biological truth for accuracy scoring.}
+\label{fig:real}
+\end{figure}
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=\textwidth]{08_pursuit_result.png}
+\caption{Longer pursuit demonstration and state timeline. Comparison with a lower-rate eye camera
+is an integration check, not a high-rate truth standard.}
+\label{fig:pursuit}
+\end{figure}
+
+\subsection{What remains unproved}
+
+Current evidence does not yet establish:
+\begin{itemize}
+  \item repeatable whole-device precision on a physical model eye with commanded motion;
+  \item traceable angular scale across subjects, eye position, field, and scanner direction;
+  \item high-rate agreement with an independent reference over the relevant bandwidth;
+  \item robustness to vessel-poor fields, blur, low signal, pathology, and large saccades;
+  \item the measured scanner/blanking topology during the nominal inter-frame interval;
+  \item patient exposure under continuous operation and single-fault conditions.
+\end{itemize}
+
+\section{Sensor requirements for cognitive signals}
+
+\subsection{Four quantities that should not be collapsed}
+
+The phrase ``high-speed eye tracking'' hides four independent questions.
+
+\begin{enumerate}
+  \item \textbf{Event rate}: how often events occur, such as microsaccades per second.
+  \item \textbf{Waveform bandwidth}: how rapidly position or velocity changes within an event.
+  \item \textbf{Acquisition rate}: how often the instrument samples sufficiently to estimate the
+  desired timing or waveform with margin.
+  \item \textbf{Spatial precision}: the smallest displacement that must be resolved after
+  calibration and noise.
+\end{enumerate}
+
+A low event rate does not imply a low required acquisition rate. Microsaccades may occur only a few
+times per second, yet millisecond-scale onset timing and direction estimation can require hundreds
+of samples per second or more. Conversely, pupil dynamics may benefit from moderate frame rates but
+do not require retinal arcsecond precision.
+
+\subsection{Design envelopes}
+
+\begingroup
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{longtable}{>{\bfseries}p{0.15\textwidth} p{0.18\textwidth} p{0.27\textwidth}
+                  p{0.18\textwidth} p{0.13\textwidth}}
+\caption{Signal-specific design envelopes. Rates are acquisition design ranges, not biological
+event frequencies.}\label{tab:signals}\\
+\toprule
+Signal & Approximate scale & Acquisition interpretation & Precision regime & Likely sensor\\
+\midrule
+\endfirsthead
+\toprule
+Signal & Approximate scale & Acquisition interpretation & Precision regime & Likely sensor\\
+\midrule
+\endhead
+Saccade & larger than 1--2$^\circ$ & 100--250 Hz detection; 200--500 Hz routine kinematics;
+about 1000 Hz for fine onset/acceleration &
+arcminute/coarse & camera or SLO\\
+Microsaccade onset/rate & roughly 0.1--0.5$^\circ$ & at least 250 Hz; 500--1000 Hz for waveform
+shape & coarse event detection & event/camera or SLO\\
+Microsaccade direction & roughly 0.1--0.5$^\circ$ & approximately 500--1000 Hz when fine direction
+and onset matter & arcminute, possibly finer at small amplitude & SLO or fusion\\
+Drift & about 0--40 Hz content; reported velocity about 50--94 arcmin/s & ideal floor about 80 Hz;
+200--500 Hz for credible velocity and spectra &
+arcminute overall; short high-rate increments can become arcsecond-scale & SLO or fusion\\
+Tremor & about 1 arcmin or smaller & 200 Hz is only the ideal Nyquist floor for 100 Hz content;
+at least 500 Hz is a practical starting point; direct retinal work has used 1920 Hz &
+sub-arcminute to arcsecond & SLO or specialized sensor\\
+Pupil & millimeter-scale diameter & approximately 30--120 Hz for most cognitive pupillometry,
+with protocol-specific filtering and latency & micrometer/coarse image scale & eye camera\\
+\bottomrule
+\end{longtable}
+\endgroup
+
+The table is a design synthesis from Rucci and Poletti \cite{RucciPoletti2015}, Rolfs
+\cite{Rolfs2009}, Niehorster and colleagues \cite{Niehorster2020}, Poletti and colleagues
+\cite{Poletti2015}, Bowers and colleagues \cite{Bowers2019}, and pupillography guidance
+\cite{Kelbsch2019}; it is not a universal specification. Sampling targets depend on the
+analysis objective, latency budget, estimator, noise, anti-alias filtering, and desired uncertainty.
+For tremor, 200 Hz is the mathematical Nyquist floor for a 100 Hz component, not a robust
+instrument requirement. Bowers and colleagues sampled retinal motion at 1920 Hz, enabling analysis
+through 960 Hz \cite{Bowers2019}; that acquisition choice is evidence of experimental practice, not
+a requirement that every cognitive mode operate at 1920 Hz.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=\textwidth]{07_signal_landscape.png}
+\caption{Temporal acquisition demand and spatial precision are orthogonal. Tremor is intrinsically
+arcsecond-scale; fine microsaccade direction and short high-rate drift increments can also become
+precision-limited.}
+\label{fig:signals}
+\end{figure}
+
+\subsection{Implication for sensor fusion}
+
+No single sensor must dominate all modes. A pupil camera provides robust coarse gaze and pupil
+diameter over a wide field. The SLO provides retinal texture and potentially higher relative spatial
+precision during valid acquisition. OPM-MEG, stimulus, and behavior provide additional synchronized
+modalities. A production platform should preserve hardware time and uncertainty so models can use
+the best available sensor rather than forcing every signal through one image stream.
+
+This corrects an overly strong slogan that ``only tremor needs the SLO.'' Tremor is the clearest
+intrinsically arcsecond-scale signal, but fine direction estimates for small microsaccades and
+short-interval drift increments can also demand very small displacement precision. Whether this
+specific SD-SLO reaches those regimes remains an empirical question.
+
+\section{Inter-frame dead time and continuous acquisition}
+
+\subsection{What is known and what is not}
+
+Two legitimate but incompatible conditional timing models must be kept separate.
+
+\begin{enumerate}
+  \item \textbf{Legacy capture bracket.} The pursuit result explicitly assumes a 68.3387 ms frame
+  period split into 58.3387 ms candidate active time and 10.0 ms dead time. The conditional dead
+  fraction is $10/68.3387=14.63\%$. This is a \hypothesis{}, not scanner telemetry.
+  \item \textbf{Candidate-clock cross-design calculation.} Applying the technical note's
+  20 kline/s bidirectional clock to the legacy 808-line geometry gives 40.4 ms active-line time.
+  At the measured 14.633 fps frame period, 27.9387 ms remains unexplained, a conditional fraction
+  of 40.88\%. This mixes a candidate fast-axis clock with legacy frame geometry and therefore is
+  a \derived{} diagnostic, not a measured duty cycle.
+\end{enumerate}
+
+The repository does not contain measured slow-axis position, illumination state, detector validity,
+or complete scanner telemetry for either interval. Calling either interval ``flyback'' would imply
+a cause that has not been demonstrated. The correct term is \emph{uncharacterized inter-frame
+dead time}.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=\textwidth]{06_flyback_gap.png}
+\caption{Conditional blind interval from the candidate 20 kline/s clock combined with legacy
+808-line geometry and frame rate. This cross-design calculation does not identify its physical
+cause; scanner and blanking telemetry are required.}
+\label{fig:deadtime}
+\end{figure}
+
+For event onsets uniform in phase relative to the frame cycle, the fraction beginning in an
+unobserved interval equals that interval's conditional fraction: 14.63\% for the explicit legacy
+bracket or 40.88\% for the candidate-clock cross-design calculation. These are conditional
+consequences of separate models, not measurements of the present instrument.
+
+\subsection{Why prediction does not remove the blind interval}
+
+A dynamical model can propagate the last accepted state into a gap:
+\[
+  \hat{\mathbf x}_{k|k-1}=\mathbf F_k\hat{\mathbf x}_{k-1|k-1},\qquad
+  \mathbf P_{k|k-1}=\mathbf F_k\mathbf P_{k-1|k-1}\mathbf F_k^\mathsf T+\mathbf Q_k.
+\]
+Uncertainty grows because no new retinal innovation constrains the state. A saccade or
+microsaccade that begins inside the gap can violate the motion model. Prediction is therefore useful
+for control continuity, but it cannot establish event onset or direction as an observation.
+
+\subsection{Freeze the line-record interface before choosing a scanner topology}
+
+The no-regret architectural move is to define a timestamped line record that remains valid across
+scanner options:
+\[
+  \mathcal L_i =
+  \{t_i,\mathrm{line\ id},\mathrm{direction},\mathbf p_i,
+    \mathrm{illumination},\mathrm{validity},\mathrm{calibration},\mathrm{revision}\}.
+\]
+Here $\mathbf p_i$ can be a measured position trace or reference to a versioned LUT. The interface
+does not promise gapless observation and does not presuppose resonant, sawtooth, dual-axis, or
+fused-sensor hardware. It simply prevents scanner topology from being hidden inside an opaque frame
+array.
+
+Candidate options can then be compared against one interface: characterize and reduce the present
+dead time; acquire useful lines through a return path if optically and safely valid; use a scanner
+topology designed for higher duty cycle; or fuse SLO with a continuously observing coarse sensor.
+Selection should be based on measured valid-line duty cycle, timestamp error, spatial calibration,
+registration performance, safety margin, OPM coexistence, mechanics, cost, and production risk.
+
+\section{Laser-safety framework for continuous operation}
+
+\subsection{Three evaluations that must remain distinct}
+
+``Laser safety'' is not one calculation.
+
+\begin{enumerate}
+  \item \textbf{Laser-product classification.} IEC 60825-1 and applicable U.S. 21 CFR provisions
+  address accessible emission, product class, labeling, engineering controls, and scanning
+  safeguards \cite{IEC60825,FDA1040}.
+  \item \textbf{Ophthalmic patient exposure.} ISO 15004-2 and FDA-recognized ANSI Z80.36 address
+  optical-radiation hazards for ophthalmic instruments under normal and relevant fault
+  conditions \cite{ISO15004,ANSI8036}.
+  \item \textbf{Medical-device classification and pathway.} FDA product codes and recognized
+  standards govern the regulatory pathway. This classification is not equivalent to an IEC laser
+  class \cite{FDAMYC}.
+\end{enumerate}
+
+The applicable clauses, wavelength weighting, angular subtense treatment, scanning correction,
+measurement aperture, and averaging windows must be selected by qualified laser-safety and
+regulatory personnel for the actual product configuration. This paper is an engineering input and
+not a safety determination.
+
+\subsection{Parameterized exposure quantities}
+
+The fundamental quantities include radiant power $P(\lambda,t)$ at the cornea, retinal irradiance,
+radiant exposure, dwell, revisit pattern, and cumulative session history. In simplified notation,
+\[
+  E_{\mathrm{ret}}(\lambda,t)=
+  \frac{P(\lambda,t)\,T_{\mathrm{eye}}(\lambda)\,C_{\mathrm{geom}}(t)}
+       {A_{\mathrm{ret}}(\lambda,t)},
+\qquad
+  H_{\mathrm{ret}}=\int E_{\mathrm{ret}}(t)\,dt .
+\]
+This form is intentionally generic. A standards calculation may use weighted source radiance or
+radiance dose, apparent-source angular subtense, wavelength-dependent hazard functions, pulse-group
+rules, and scanning-failure provisions rather than this simple area model.
+
+For one fast sweep with retinal width $W$ and center velocity $v_{\max}$, a crude center dwell over
+spot diameter $d$ is $t_d\approx d/v_{\max}$. Near sinusoidal turnarounds, velocity approaches zero,
+so the center approximation is invalid. Real exposure must integrate the measured two-axis
+trajectory, beam profile, blanking state, and fault behavior.
+
+\subsection{Inputs that are still required}
+
+A defensible calculation requires, at minimum:
+\begin{itemize}
+  \item measured spectral power at the corneal plane for every operating mode;
+  \item wavelength distribution and source linewidth;
+  \item beam diameter, divergence, and profile at the standard measurement location;
+  \item complete measured fast- and slow-axis position-versus-time traces;
+  \item illumination/blanking waveform and detector-validity timing;
+  \item nominal session duration, repetition schedule, and cumulative-use model;
+  \item scanner tolerances and credible single-fault trajectories;
+  \item evidence that independent hardware removes or limits emission under scanner faults;
+  \item identification of the exact standard editions, clauses, corrections, and regulatory
+  pathway used by the reviewer.
+\end{itemize}
+
+Those values are presently \missing{} in the evidence ledger. Consequently, no allowed-power
+number or continuous-operation safety conclusion is stated here.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=\textwidth]{09_safety_inputs.png}
+\caption{Safety analysis is a parameterized measurement and fault-control problem. Geometry alone
+cannot establish compliance.}
+\label{fig:safety}
+\end{figure}
+
+\subsection{Controls should not depend on application software}
+
+Candidate controls include independent scanner-motion monitoring, hardwired emission shutdown,
+power limiting, startup self-test, watchdogs, blanking verification, session-dose accounting,
+fault logging, and conservative stop states. Their response time and independence must be derived
+from the applicable hazard analysis. If scanner position, clock validity, or blanking state becomes
+invalid, the safe action must not rely on a high-level gaze process continuing to execute.
+
+\section{Production architecture for a cognitive platform}
+
+\subsection{Keep, change, configure, and defer}
+
+\begingroup
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{>{\bfseries}p{0.15\textwidth} p{0.34\textwidth} p{0.38\textwidth}}
+\caption{Disposition of major legacy assumptions.}\label{tab:ledger}\\
+\toprule
+Disposition & Element & Reason\\
+\midrule
+\endfirsthead
+\toprule
+Disposition & Element & Reason\\
+\midrule
+\endhead
+Keep & Confocal retinal imaging, optical calibration, reference registration, safety engineering,
+portable mechanics, controlled OPM coexistence & These capabilities support both retinal health
+and cognitive measurements.\\
+Change & Opaque frame-only acquisition, uncharacterized dead time, hidden timestamp assumptions,
+and state interpolation that erases provenance & They prevent event-level interpretation and
+traceable multimodal alignment.\\
+Configure & Strip width/stride, optical power mode, field, sensor fusion, reference policy,
+display protocol, and estimator latency & Different experiments need different time/space/safety
+trade-offs; one hard-coded operating point is not optimal.\\
+Defer & Final scanner topology, universal arcsecond claim, long-session optical mode, and a single
+ML representation & Current evidence does not justify freezing these decisions.\\
+\bottomrule
+\end{longtable}
+\endgroup
+
+\subsection{Layered data and timing model}
+
+A production cognitive instrument should expose:
+\begin{enumerate}
+  \item \textbf{hardware time}: one monotonic clock or a calibrated mapping among clocks;
+  \item \textbf{sample records}: detector samples, scanner telemetry, illumination, and validity;
+  \item \textbf{line records}: direction, time interval, position/LUT version, and calibration;
+  \item \textbf{observation records}: displacement, quality, aperture, and reference identity;
+  \item \textbf{estimate records}: filtering/prediction state and uncertainty;
+  \item \textbf{multimodal records}: display photons or photodiode, eye camera, behavior, OPM-MEG,
+  and experiment markers;
+  \item \textbf{provenance}: hardware, firmware, software, calibration, safety mode, and model
+  revision identifiers.
+\end{enumerate}
+
+Frames can still be generated for clinical review and visualization, but they become one product
+of the line stream rather than the only representation. This preserves compatibility with the
+retinal-health use case while making time explicit for cognition.
+
+\subsection{Synchronization requirement}
+
+Each subsystem clock $t_j$ should be mapped into a master timebase:
+\[
+  t_{\mathrm{master}} = a_j t_j + b_j + \epsilon_j(t),
+\]
+where $a_j$ captures rate error, $b_j$ captures offset, and $\epsilon_j$ captures residual jitter or
+nonlinearity. Synchronization acceptance must report both mean error and tails across the full
+session. A software timestamp taken after buffering is insufficient evidence of photon or stimulus
+time. Display timing should be measured with a photodiode or equivalent optical marker when the
+experiment depends on actual photon onset.
+
+\section{Validation and production freeze gates}
+
+\subsection{Validation sequence}
+
+The validation program should advance in causal order.
+
+\begin{enumerate}
+  \item \textbf{Timing topology.} Record fast/slow position, detector clock, illumination, blanking,
+  frame markers, and validity on common hardware time. Explain every interval.
+  \item \textbf{Optical/electronic transfer.} Measure spectrum, power, spot/beam profile, field,
+  detector response, ADC noise, delay, and forward/reverse differences.
+  \item \textbf{Model-eye motion.} Command traceable position trajectories spanning drift,
+  microsaccade-like steps, saccades, and tremor-band components.
+  \item \textbf{Registration operating curves.} Sweep strip width, stride, signal, blur, vessel
+  content, search range, and motion; report error, lock, false lock, latency, and uncertainty.
+  \item \textbf{Biological comparison.} Compare with an independent high-rate reference whose own
+  bandwidth, latency, calibration, and uncertainty are characterized.
+  \item \textbf{Multimodal synchronization.} Measure SLO, camera, display, behavior, and OPM
+  alignment end to end, including drift over session duration.
+  \item \textbf{Safety and fault verification.} Complete standards analysis and test scanner,
+  blanking, watchdog, power, and shutdown faults.
+  \item \textbf{Production repeatability.} Repeat across units, operators, subjects, sessions, and
+  controlled revisions.
+\end{enumerate}
+
+\subsection{Candidate measurable gates}
+
+\begin{table}[ht]
+\centering
+\caption{Production freeze gates. Numerical thresholds should be approved by the responsible
+engineering and scientific owners before they are treated as specifications.}
+\begin{tabularx}{\textwidth}{>{\bfseries}p{0.18\textwidth} X}
+\toprule
+Gate & Required evidence\\
+\midrule
+G0: use cases & Named scientific observables, uncertainty tolerance, session length, and regulatory
+mode for each operating configuration.\\
+G1: timing & Measured line/frame topology, valid duty cycle, timestamp error distribution, and
+explained dead intervals.\\
+G2: optics/electronics & Measured power/spectrum, field and spot profile, transfer function, delay,
+noise, and direction asymmetry.\\
+G3: calibration & Traceable spatial/time transform with versioning and repeatability across field,
+direction, and operating modes.\\
+G4: gaze & Model-eye and biological error, precision, lock, false-lock, latency, and state
+classification by motion/quality regime.\\
+G5: safety & Qualified review, normal/single-fault calculations, independent controls, and verified
+fault responses for every enabled optical mode.\\
+G6: OPM & Controlled coexistence record and revision matrix tied to the production configuration.\\
+G7: multimodal & End-to-end display, SLO, camera, behavior, and OPM synchronization with uncertainty
+and session drift.\\
+G8: data/ML & Stable schemas, immutable raw records, calibration/revision provenance, leakage-safe
+splits, and external validation.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{A 30/60/90-day decision sequence}
+
+In the first 30 days, instrument timing and optical state should be measured on a common clock, the
+line-record schema frozen at version 0.1, and all current captures made ingestible without
+discarding invalid intervals. In parallel, responsible owners should define cognitive use cases,
+session durations, and safety operating modes.
+
+By 60 days, a traceable model-eye motion rig should exercise the full registration chain. Candidate
+scanner and fusion options should be scored with the same metrics and interface. Preliminary
+normal/fault optical measurements should identify whether a continuous mode is plausible and what
+controls it requires.
+
+By 90 days, the program should be able to make evidence-backed keep/change/defer decisions on
+scanner topology, optical duty cycle, sensor fusion, calibration hardware, timing architecture,
+and production data contracts. Decisions that still lack measured evidence should remain open
+rather than being converted into assumptions by schedule pressure.
+
+\section{Limitations}
+
+This analysis has several explicit limitations.
+\begin{itemize}
+  \item The technical-note parameters describe a candidate scanner and sampling design; they are
+  not all measurements of the current instrument.
+  \item Real-data demonstrations lack independent high-rate biological truth.
+  \item Synthetic performance depends on the fixture's motion, texture, noise, blur, and
+  calibration assumptions.
+  \item Nominal retinal scale does not replace subject-specific biometry or measured angular
+  calibration.
+  \item Literature from adaptive-optics or specialized retinal systems does not establish the
+  precision of this SD-SLO.
+  \item The cause and optical state of the inter-frame interval are unmeasured in the available
+  evidence.
+  \item The safety section identifies standards regimes, equations, inputs, and controls but is
+  not a compliance conclusion or allowed-power calculation.
+  \item OPM coexistence is accepted as a program fact; production applicability still requires a
+  controlled revision record.
+\end{itemize}
+
+\section{Conclusion}
+
+An SLO can provide more than retinal pictures because each detector sample is tied to scanner
+position and time. Eye motion deforms the raster; short-strip registration can invert that
+deformation into a time-resolved relative trajectory. The candidate 10 kHz sinusoid supports a
+20 kline/s clock, and the 24/6 strip example produces 1.20 ms apertures every 0.30 ms during active
+acquisition. These outputs are overlapping and correlated, so output rate must not be confused with
+independent information bandwidth.
+
+The current software evidence is promising but bounded. Synthetic fixtures validate algorithm
+behavior under known assumptions. Real retinal captures show that vessel-based registration can
+lock and track coherent motion. Neither establishes whole-device arcsecond performance or
+high-rate biological accuracy. Those claims require traceable model-eye motion, independent
+high-rate reference measurements, calibrated transforms, and explicit state/provenance records.
+
+The program's pivot from intermittent retinal imaging to a cognitive platform makes time and
+missingness first-class design variables. The most durable production decision is to freeze a
+timestamped line-record and multimodal timing interface while leaving scanner topology and optical
+duty cycle open until they are measured. Frames remain useful outputs, but should no longer hide
+the temporal structure of acquisition.
+
+Finally, continuous illumination cannot be justified by a duty-cycle argument. Laser-product
+classification, patient exposure, and medical-device pathway are distinct evaluations. The
+necessary measured spectrum, power, beam, trajectory, session, and fault inputs must be completed
+and reviewed before a safety conclusion. With those boundaries preserved, the existing retinal
+capability can become the precision component of a broader synchronized cognitive instrument
+without overclaiming what has already been demonstrated.
+
+\appendix
+\section{Reproducibility and source artifacts}
+
+The primary engineering source is
+\textit{SLO Scan Bandwidth Sampling Technical Note v2}, identified in the evidence ledger by
+SHA-256:
+\begin{center}
+  \small\texttt{e9fb9728c77d352bcd55ccb6eb66979e}\\
+  \small\texttt{e415b1c9d416d32b517f1c924a6c33c4}
+\end{center}
+Key repository artifacts are:
+\begin{itemize}
+  \item \path{cognitive_gaze_evidence.json}: claim and input ledger;
+  \item \path{cognitive_gaze_figure_manifest.json}: figure/input hashes;
+  \item \path{build_cognitive_gaze_figures.py}: figure generator;
+  \item \path{build_cognitive_gaze_deck.py}: PowerPoint generator;
+  \item \path{src/intraframe_ncc/}: registration and trajectory implementation;
+  \item \path{src/sdslo_gaze/}: scan timing, desinusoiding, dynamics, contracts, and evaluation.
+\end{itemize}
+
+\section{Recommended minimum line-record fields}
+
+\begingroup
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{>{\ttfamily}p{0.24\textwidth} p{0.65\textwidth}}
+\toprule
+\normalfont\bfseries Field & \bfseries Meaning\\
+\midrule
+timestamp\_start/end & Hardware-clock interval covered by the line.\\
+line\_id / frame\_id & Monotonic line identity; optional frame grouping.\\
+direction & Forward/reverse or other scanner phase identity.\\
+position\_trace & Measured scanner positions or versioned LUT reference.\\
+illumination\_state & On/off/power mode and relevant blanking state.\\
+detector\_validity & Saturation, clipping, packet loss, or analog/ADC faults.\\
+calibration\_id & Spatial, delay, direction, and distortion transform version.\\
+hardware\_revision & Optics, scanners, detector, electronics, and mechanics.\\
+firmware/software & Acquisition and processing versions.\\
+safety\_mode & Approved optical configuration and control state.\\
+\bottomrule
+\end{longtable}
+\endgroup
+
+\begin{thebibliography}{99}
+
+\bibitem{Bennett1994}
+A. G. Bennett, M. Rudnicka, and D. F. Edgar,
+``Improvements on Littmann's method of determining the size of retinal features by fundus
+photography,'' \emph{Graefe's Archive for Clinical and Experimental Ophthalmology},
+vol. 232, pp. 361--367, 1994.
+
+\bibitem{Bowers2019}
+N. R. Bowers et al.,
+``The effects of fixational tremor on the retinal image,''
+\emph{Journal of Vision}, vol. 19, no. 11, article 8, 2019,
+doi:10.1167/19.11.8.
+
+\bibitem{Kelbsch2019}
+C. Kelbsch et al.,
+``Standards in pupillography,''
+\emph{Frontiers in Neurology}, vol. 10, 2019.
+
+\bibitem{RucciPoletti2015}
+M. Rucci and M. Poletti,
+``Control and functions of fixational eye movements,''
+\emph{Annual Review of Vision Science}, vol. 1, pp. 499--518, 2015,
+doi:10.1146/annurev-vision-082114-035742.
+
+\bibitem{Poletti2015}
+M. Poletti, J. Aytekin, and M. Rucci,
+``Head-eye coordination at a microscopic scale,''
+\emph{Current Biology}, 2015,
+doi:10.1016/j.cub.2015.11.004.
+
+\bibitem{Rolfs2009}
+M. Rolfs,
+``Microsaccades: small steps on a long way,''
+\emph{Vision Research}, vol. 49, no. 20, pp. 2415--2441, 2009.
+
+\bibitem{Niehorster2020}
+D. C. Niehorster et al.,
+``The Tobii Pro Spectrum: a useful tool for studying microsaccades?''
+\emph{Behavior Research Methods}, 2020,
+doi:10.3758/s13428-020-01430-3.
+
+\bibitem{IEC60825}
+International Electrotechnical Commission,
+\emph{IEC 60825-1: Safety of Laser Products---Part 1: Equipment Classification and Requirements},
+applicable edition.
+
+\bibitem{ISO15004}
+International Organization for Standardization,
+\emph{ISO 15004-2:2024 Ophthalmic Instruments---Fundamental Requirements and Test Methods---Part 2:
+Light Hazard Protection}.
+
+\bibitem{ANSI8036}
+American National Standards Institute,
+\emph{ANSI Z80.36-2021: Ophthalmics---Light Hazard Protection for Ophthalmic Instruments}.
+
+\bibitem{FDA1040}
+U.S. Food and Drug Administration,
+\emph{21 CFR 1040.10 and 1040.11; Laser Notice No. 56}, applicable requirements.
+
+\bibitem{FDAMYC}
+U.S. Food and Drug Administration,
+\emph{Product Classification: Scanning Laser Ophthalmoscope, Product Code MYC}.
+
+\end{thebibliography}
+
+\end{document}
