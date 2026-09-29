@@ -13,6 +13,10 @@ Timing models are hardware assumptions (active/flyback split is not measurable f
 | `flyback10ms` | 1477.9 Hz | 2.154′ / 0.808′ | 494 (main-seq r=0.864) | 0.871 / 0.859 |
 | `active40ms` | 1477.9 Hz | 3.837′ / 1.438′ | 262 (main-seq r=0.807) | 0.844 / 0.763 |
 
+![test1 summary: precision floors, pursuit-dot correlation, and sample-role breakdown for both timing models](figures/test1_summary.png)
+
+*Same manifests, visually: precision floor and pursuit-dot correlation per timing model, plus the fraction of strip samples that are actually observed vs predicted across the flyback gap. Regenerate with `python scripts/plot_results.py`.*
+
 - Accuracy reported on **observed** samples only; flyback samples are predict-only.
 - Blind-gap microsaccade waveforms are **not** claimed recovered.
 - Absolute waveform fidelity vs artificial eye: future work. Not a medical device.
