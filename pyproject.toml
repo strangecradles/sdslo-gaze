@@ -9,7 +9,7 @@ description = "SOTA high-rate (600-960+ Hz) 2-D gaze tracking and microsaccade-w
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "Kodiak" }]
+authors = [{ name = "Ashton Perlroth" }]
 dependencies = [
     "numpy>=1.24",
     "scipy>=1.10",
